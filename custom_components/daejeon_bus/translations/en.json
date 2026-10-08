@@ -17,15 +17,13 @@
           "api_key": "API 키 (서비스키)",
           "station_id": "정류소 번호 (arsId)",
           "station_name": "정류소 이름 (선택)",
-          "include_buses": "대상 버스 목록 (선택)",
-          "stops_csv": "정류소 CSV 파일 경로 (선택)"
+          "include_buses": "대상 버스 목록 (선택)"
         },
         "data_description": {
           "api_key": "공공데이터포털에서 발급받은 대전광역시 버스도착정보 서비스키 (인코딩/디코딩 키 모두 가능)",
           "station_id": "정류소 표지판에 적힌 5자리 번호 (예: 31770)",
           "station_name": "비워두면 API의 정류소 이름을 사용합니다",
-          "include_buses": "쉼표로 구분한 노선번호 (예: 3,103,119). 비워두면 전체 노선",
-          "stops_csv": "최근 통과 정류소 이름 변환용 CSV. 예: /config/daejeon_bus_stops.csv. 정류소번호(모바일단축번호/BUS_STOP_ID/arsId)와 정류소명(정류장명/BUSSTOP_NM) 열이 있어야 합니다. UTF-8/CP949 모두 가능. 비워두면 내장 목록과 정류소정보 API를 사용합니다."
+          "include_buses": "쉼표로 구분한 노선번호 (예: 3,103,119). 비워두면 전체 노선"
         }
       },
       "commute": {
@@ -69,8 +67,6 @@
     "error": {
       "invalid_auth": "서비스키가 올바르지 않거나 등록되지 않았습니다.",
       "cannot_connect": "API 호출에 실패했습니다. 정류소 번호와 네트워크를 확인하세요.",
-      "csv_not_found": "CSV 파일을 찾을 수 없습니다. Home Assistant 기준 경로(예: /config/...)인지 확인하세요.",
-      "csv_invalid": "CSV에서 정류소 번호/이름 열을 찾지 못했습니다.",
       "route_not_found": "노선 정류소 목록을 받지 못했습니다. 노선 ID를 확인하세요.",
       "stop_not_on_route": "이 노선은 입력한 정류장을 지나지 않습니다."
     },
@@ -86,7 +82,6 @@
           "api_key": "API 키 (서비스키)",
           "station_name": "정류소 이름 (선택)",
           "include_buses": "대상 버스 목록 (선택)",
-          "stops_csv": "정류소 CSV 파일 경로 (선택)",
           "soon_minutes": "'곧 도착' 기준 (분)",
           "walk_minutes": "도보 시간 (분)",
           "leave_margin": "출발 알림 여유 (분)",
@@ -100,7 +95,6 @@
           "api_key": "공공데이터포털에서 발급받은 대전광역시 버스도착정보 서비스키 (인코딩/디코딩 키 모두 가능)",
           "station_name": "비워두면 API의 정류소 이름을 사용합니다",
           "include_buses": "쉼표로 구분한 노선번호 (예: 3,103,119). 비워두면 전체 노선",
-          "stops_csv": "최근 통과 정류소 이름 변환용 CSV. 예: /config/daejeon_bus_stops.csv. 정류소번호(모바일단축번호/BUS_STOP_ID/arsId)와 정류소명(정류장명/BUSSTOP_NM) 열이 있어야 합니다. UTF-8/CP949 모두 가능. 비워두면 내장 목록과 정류소정보 API를 사용합니다.",
           "soon_minutes": "도착예정시간이 이 값 이하인 버스는 '곧 도착'으로 표시합니다. 0이면 사용하지 않습니다.",
           "walk_minutes": "집에서 정류장까지 걸리는 시간. 도착예정시간이 이보다 짧은 버스는 놓친 것으로 보고 다음 버스를 기준으로 합니다.",
           "leave_margin": "'출발까지'가 이 값 이하가 되면 '지금 출발'(바이너리 센서 on)이 됩니다.",
@@ -109,10 +103,6 @@
           "auto_interval": "최소 30초. 공공데이터포털 개발 키는 하루 호출 수 제한(보통 1,000회)이 있으니 주의하세요. 출근 알리미는 1회 조회에 API 2번을 씁니다."
         }
       }
-    },
-    "error": {
-      "csv_not_found": "CSV 파일을 찾을 수 없습니다. Home Assistant 기준 경로(예: /config/...)인지 확인하세요.",
-      "csv_invalid": "CSV에서 정류소 번호/이름 열을 찾지 못했습니다."
     }
   },
   "selector": {

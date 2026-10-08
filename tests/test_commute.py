@@ -219,6 +219,13 @@ async def test_commute_entities(hass):
         assert len(advice.attributes["버스 목록"]) == 6
         assert hass.states.get(f"button.{prefix}_refresh") is not None
 
+        # 노선 경유 정류소 이름(91개 중 고유 arsId)은 공용 정류소 이름 캐시에 저장
+        from custom_components.daejeon_bus.stops import get_stop_cache
+
+        cache = get_stop_cache(hass)
+        assert cache.get("31770") == "갈마네거리"
+        assert cache.get("32190") == "아이빌딩"
+
         # 버튼을 누르면 위치만 다시 조회 (정류소 목록은 캐시)
         await hass.services.async_call(
             "button", "press", {"entity_id": f"button.{prefix}_refresh"}, blocking=True

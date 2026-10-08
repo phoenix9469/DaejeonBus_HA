@@ -22,7 +22,6 @@ ENTRY_TYPE_COMMUTE = "commute"  # 출근 알리미 (노선 + 내 정류장)
 CONF_STATION_ID = "station_id"
 CONF_STATION_NAME = "station_name"
 CONF_INCLUDE_BUSES = "include_buses"
-CONF_STOPS_CSV = "stops_csv"
 CONF_SOON_MINUTES = "soon_minutes"
 
 DEFAULT_SOON_MINUTES = 3

@@ -1,118 +1,114 @@
-"""정류소 번호(arsId) -> 정류소 이름 변환표.
+"""정류소 번호(arsId) -> 정류소 이름 캐시.
 
-1. 사용자 CSV (설정의 '정류소 CSV 파일 경로')
-2. 내장 목록 stops.json (국토교통부 전국 버스정류장 위치정보, 대전 2023-10 기준)
-순으로 찾고, 둘 다 없으면 코디네이터가 정류소정보 API로 조회한다.
+이름은 파일(/config/.storage/daejeon_bus_stop_names)에 저장해 두고,
+파일에 없는 정류소만 정류소정보 API(getStationByUid)로 조회한 뒤 파일에 추가한다.
+출근 알리미가 받는 노선 경유 정류소 목록의 이름도 같은 파일에 넣는다.
+모든 항목(정류소/출근 알리미)이 하나의 캐시를 공유한다.
 """
 from __future__ import annotations
 
-import csv
-import io
-import json
+import asyncio
 import logging
-from pathlib import Path
+from typing import Any
+
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
+
+from .api import DaejeonBusApi, DaejeonBusError
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-BUNDLED_FILE = Path(__file__).parent / "stops.json"
-
-# CSV 헤더 후보 (앞쪽이 우선)
-ID_COLUMNS = (
-    "모바일단축번호",  # 국토교통부 전국 버스정류장 위치정보
-    "BUS_STOP_ID",  # 대전 BIS 노선별 경유 정류소
-    "ARO_BUSSTOP_ID",  # 대전 BIS 정류소정보
-    "관리번호",  # 대전광역시 시내버스 정류장 현황
-    "arsId",
-    "ARS_ID",
-    "ARS번호",
-    "정류소번호",
-    "정류장번호",
-)
-NAME_COLUMNS = (
-    "정류장명",
-    "정류장이름",  # 대전광역시 시내버스 정류장 현황 ('정류장 이름')
-    "정류소명",
-    "정류소이름",
-    "BUSSTOP_NM",
-    "STOP_NAME",
-    "정류소명칭",
-    "name",
-)
-CITY_CODE_COLUMN = "도시코드"
-DAEJEON_CITY_CODE = "25"
+STORAGE_KEY = f"{DOMAIN}_stop_names"
+STORAGE_VERSION = 1
+SAVE_DELAY = 10  # 초. 여러 번 바뀌어도 한 번에 저장
+DATA_KEY = "stop_names"  # hass.data[DOMAIN][DATA_KEY]
 
 
-def load_bundled() -> dict[str, str]:
-    try:
-        return json.loads(BUNDLED_FILE.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as err:
-        _LOGGER.warning("내장 정류소 목록을 읽지 못했습니다: %s", err)
-        return {}
+class StopNameCache:
+    """arsId -> 정류소 이름. 파일 캐시 + 정류소정보 API."""
 
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+        self._names: dict[str, str] = {}
+        self._loaded = False
+        self._lock = asyncio.Lock()
+        # 이번 실행 중 API로도 이름을 못 찾은 arsId (재조회 방지, 파일에는 저장 안 함)
+        self._unknown: set[str] = set()
+        self._api_ok = True
 
-def _decode(raw: bytes) -> str:
-    for encoding in ("utf-8-sig", "cp949"):
-        try:
-            return raw.decode(encoding)
-        except UnicodeDecodeError:
-            continue
-    return raw.decode("utf-8", errors="replace")
+    async def async_load(self) -> None:
+        async with self._lock:
+            if self._loaded:
+                return
+            data = await self._store.async_load() or {}
+            self._names = {
+                str(k): str(v) for k, v in (data.get("stops") or {}).items() if v
+            }
+            self._loaded = True
+            _LOGGER.debug("정류소 이름 캐시 %d개를 읽었습니다", len(self._names))
 
+    def get(self, ars_id: Any) -> str | None:
+        ars_id = str(ars_id or "").strip()
+        return self._names.get(ars_id) if ars_id else None
 
-def _norm(name: str) -> str:
-    """헤더 비교용: 공백 제거 + 소문자."""
-    return "".join(name.split()).lower()
+    def __len__(self) -> int:
+        return len(self._names)
 
+    def _schedule_save(self) -> None:
+        self._store.async_delay_save(lambda: {"stops": dict(sorted(self._names.items()))}, SAVE_DELAY)
 
-def _pick(header: list[str], candidates: tuple[str, ...]) -> str | None:
-    normalized = {_norm(h): h for h in header}
-    for cand in candidates:
-        if _norm(cand) in normalized:
-            return normalized[_norm(cand)]
-    return None
+    def async_add(self, names: dict[str, str]) -> None:
+        """이름을 캐시에 추가 (바뀐 게 있으면 파일 저장 예약)."""
+        changed = False
+        for ars_id, name in names.items():
+            ars_id, name = str(ars_id).strip(), str(name).strip()
+            if ars_id and name and self._names.get(ars_id) != name:
+                self._names[ars_id] = name
+                changed = True
+        if changed:
+            self._schedule_save()
 
-
-def parse_csv(text: str) -> dict[str, str]:
-    """CSV 텍스트에서 arsId -> 이름 표를 만든다. 열 이름은 자동 인식."""
-    first_line = text.split("\n", 1)[0]
-    # 엑셀에서 복사/저장한 탭 구분 파일도 허용
-    delimiter = "\t" if first_line.count("\t") > first_line.count(",") else ","
-    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
-    header = reader.fieldnames or []
-    id_col = _pick(header, ID_COLUMNS)
-    name_col = _pick(header, NAME_COLUMNS)
-    if not id_col or not name_col:
-        raise ValueError(
-            f"정류소 번호/이름 열을 찾지 못했습니다. 헤더: {header}. "
-            f"번호 열 후보: {ID_COLUMNS}, 이름 열 후보: {NAME_COLUMNS}"
+    async def async_resolve(self, api: DaejeonBusApi, ars_ids: set[str]) -> None:
+        """캐시에 없는 arsId만 정류소정보 API로 조회해 캐시에 추가한다."""
+        await self.async_load()
+        if not self._api_ok:
+            return
+        missing = sorted(
+            a for a in ars_ids if a and a not in self._names and a not in self._unknown
         )
-    city_col = CITY_CODE_COLUMN if CITY_CODE_COLUMN in header else None
+        if not missing:
+            return
 
-    stops: dict[str, str] = {}
-    for row in reader:
-        if city_col and str(row.get(city_col) or "").strip() != DAEJEON_CITY_CODE:
-            continue
-        ars_id = str(row.get(id_col) or "").strip()
-        name = str(row.get(name_col) or "").strip()
-        if ars_id and name:
-            stops.setdefault(ars_id, name)
-    return stops
+        results = await asyncio.gather(
+            *(api.get_station_name(a) for a in missing), return_exceptions=True
+        )
+        found: dict[str, str] = {}
+        failures = 0
+        for ars_id, result in zip(missing, results):
+            if isinstance(result, str) and result:
+                found[ars_id] = result
+                continue
+            self._unknown.add(ars_id)
+            if isinstance(result, Exception):
+                failures += 1
+                _LOGGER.debug("정류소 %s 이름 조회 실패: %s", ars_id, result)
+        self.async_add(found)
+
+        if failures == len(missing):
+            # 서비스키에 정류소정보 서비스 권한이 없는 경우 등: 재시작 전까지 API 조회 중단
+            self._api_ok = False
+            _LOGGER.warning(
+                "정류소정보 API(getStationByUid)로 정류소 이름을 조회할 수 없어 "
+                "정류소 번호로 표시합니다. 공공데이터포털에서 대전광역시 정류소정보 조회 "
+                "서비스 활용신청 여부를 확인하세요. 마지막 오류: %s",
+                next((r for r in reversed(results) if isinstance(r, DaejeonBusError)), None),
+            )
 
 
-def load_csv(path: str) -> dict[str, str]:
-    """사용자 CSV 파일을 읽는다 (UTF-8 / CP949 자동 판별)."""
-    return parse_csv(_decode(Path(path).read_bytes()))
-
-
-def load_stop_names(csv_path: str | None) -> dict[str, str]:
-    """내장 목록 위에 사용자 CSV를 덮어쓴 변환표."""
-    stops = load_bundled()
-    if csv_path:
-        try:
-            custom = load_csv(csv_path)
-        except (OSError, ValueError) as err:
-            _LOGGER.warning("정류소 CSV(%s)를 읽지 못했습니다: %s", csv_path, err)
-        else:
-            _LOGGER.debug("정류소 CSV에서 %d개 정류소를 읽었습니다", len(custom))
-            stops.update(custom)
-    return stops
+def get_stop_cache(hass: HomeAssistant) -> StopNameCache:
+    """모든 항목이 공유하는 캐시."""
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    if DATA_KEY not in domain_data:
+        domain_data[DATA_KEY] = StopNameCache(hass)
+    return domain_data[DATA_KEY]

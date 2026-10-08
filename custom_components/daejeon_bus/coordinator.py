@@ -47,7 +47,6 @@ from .const import (
     CONF_INCLUDE_BUSES,
     CONF_SOON_MINUTES,
     CONF_STATION_ID,
-    CONF_STOPS_CSV,
     DEFAULT_SOON_MINUTES,
     DOMAIN,
     MSG_TP_ARRIVED,
@@ -60,7 +59,7 @@ from .const import (
     STATUS_WAITING,
 )
 from .schedule import in_window, parse_time
-from .stops import load_stop_names
+from .stops import get_stop_cache
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -212,10 +211,7 @@ class DaejeonBusCoordinator(DaejeonBusBaseCoordinator):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         conf = {**entry.data, **entry.options}
         self.unique_key = self.slug = str(conf[CONF_STATION_ID])
-        self.stop_names: dict[str, str] | None = None
-        # 정류소정보 API로도 이름을 못 찾은 arsId (재조회 방지)
-        self._unknown_stops: set[str] = set()
-        self._station_api_ok = True
+        self.stop_names = get_stop_cache(hass)
         super().__init__(hass, entry, f"{DOMAIN}_{conf[CONF_STATION_ID]}")
 
     @property
@@ -237,17 +233,10 @@ class DaejeonBusCoordinator(DaejeonBusBaseCoordinator):
         return max(0, int(minutes * 60))
 
     def stop_name(self, ars_id: Any) -> str | None:
-        ars_id = str(ars_id or "").strip()
-        if not ars_id:
-            return None
-        return (self.stop_names or {}).get(ars_id)
+        return self.stop_names.get(ars_id)
 
     async def _async_update_data(self) -> dict[str, Any]:
         conf = self.conf
-        if self.stop_names is None:
-            self.stop_names = await self.hass.async_add_executor_job(
-                load_stop_names, conf.get(CONF_STOPS_CSV)
-            )
         try:
             items = await self.api.get_arrivals(conf[CONF_STATION_ID])
         except DaejeonBusAuthError as err:
@@ -264,7 +253,11 @@ class DaejeonBusCoordinator(DaejeonBusBaseCoordinator):
                 or str(i.get("ROUTE_CD", "")).strip() in targets
             ]
 
-        await self._async_resolve_stop_names(items)
+        # 최근 통과 정류소 이름: 캐시 파일에 없는 것만 API로 조회
+        await self.stop_names.async_resolve(
+            self.api,
+            {str(i.get("LAST_STOP_ID") or "").strip() for i in items},
+        )
 
         stop_name = next(
             (str(i["STOP_NAME"]).strip() for i in items if i.get("STOP_NAME")), None
@@ -275,44 +268,6 @@ class DaejeonBusCoordinator(DaejeonBusBaseCoordinator):
             "routes": group_arrivals(items),
             "stop_name": stop_name,
         }
-
-    async def _async_resolve_stop_names(self, items: list[dict[str, Any]]) -> None:
-        """변환표에 없는 최근 통과 정류소는 정류소정보 API로 이름을 조회한다."""
-        if not self._station_api_ok:
-            return
-        names = self.stop_names if self.stop_names is not None else {}
-        missing = {
-            ars_id
-            for i in items
-            if (ars_id := str(i.get("LAST_STOP_ID") or "").strip())
-            and ars_id not in names
-            and ars_id not in self._unknown_stops
-        }
-        if not missing:
-            return
-
-        missing_list = sorted(missing)
-        results = await asyncio.gather(
-            *(self.api.get_station_name(a) for a in missing_list),
-            return_exceptions=True,
-        )
-        failures = 0
-        for ars_id, result in zip(missing_list, results):
-            if isinstance(result, str):
-                names[ars_id] = result
-            else:
-                self._unknown_stops.add(ars_id)
-                if isinstance(result, Exception):
-                    failures += 1
-                    _LOGGER.debug("정류소 %s 이름 조회 실패: %s", ars_id, result)
-        if failures == len(missing_list):
-            # 서비스키에 정류소정보 서비스 권한이 없는 경우 등: 이번 세션은 더 시도하지 않음
-            self._station_api_ok = False
-            _LOGGER.info(
-                "정류소정보 API로 정류소 이름을 조회할 수 없어 정류소 번호로 표시합니다. "
-                "공공데이터포털에서 '대전광역시_정류소정보조회' 서비스 활용신청 여부를 "
-                "확인하거나, 설정에서 정류소 CSV 파일을 지정하세요."
-            )
 
 
 StationCoordinator = DaejeonBusCoordinator
@@ -373,6 +328,10 @@ class CommuteCoordinator(DaejeonBusBaseCoordinator):
             raise DaejeonBusError(f"노선 {self.route_cd}의 정류소 목록이 비어 있습니다")
         self._stops = stops
         self._stops_fetched = now
+        # 노선 경유 정류소 이름도 공용 캐시 파일에 저장
+        cache = get_stop_cache(self.hass)
+        await cache.async_load()
+        cache.async_add({s.ars_id: s.name for s in stops if s.name})
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:

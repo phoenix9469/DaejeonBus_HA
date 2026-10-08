@@ -28,7 +28,6 @@ from .const import (
     CONF_STATION_ID,
     CONF_STATION_NAME,
     CONF_STOP_SEQ,
-    CONF_STOPS_CSV,
     CONF_WALK_MINUTES,
     DEFAULT_AUTO_END,
     DEFAULT_AUTO_INTERVAL,
@@ -43,20 +42,6 @@ from .const import (
     MIN_AUTO_INTERVAL,
     WEEKDAYS,
 )
-from .stops import load_csv
-
-
-async def _validate_csv(hass, path: str | None) -> str | None:
-    """CSV 경로가 있으면 읽어 보고, 문제가 있으면 오류 키를 돌려준다."""
-    if not path:
-        return None
-    try:
-        stops = await hass.async_add_executor_job(load_csv, path)
-    except OSError:
-        return "csv_not_found"
-    except ValueError:
-        return "csv_invalid"
-    return None if stops else "csv_invalid"
 
 
 def _clean(user_input: dict[str, Any]) -> dict[str, Any]:
@@ -141,9 +126,6 @@ class DaejeonBusConfigFlow(ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(data[CONF_STATION_ID])
             self._abort_if_unique_id_configured()
 
-            if csv_error := await _validate_csv(self.hass, data.get(CONF_STOPS_CSV)):
-                errors[CONF_STOPS_CSV] = csv_error
-
             api = DaejeonBusApi(async_get_clientsession(self.hass), data[CONF_API_KEY])
             stop_name = None
             try:
@@ -170,7 +152,6 @@ class DaejeonBusConfigFlow(ConfigFlow, domain=DOMAIN):
                     vol.Required(CONF_STATION_ID, default=user_input.get(CONF_STATION_ID, "")): str,
                     vol.Optional(CONF_STATION_NAME, default=user_input.get(CONF_STATION_NAME, "")): str,
                     vol.Optional(CONF_INCLUDE_BUSES, default=user_input.get(CONF_INCLUDE_BUSES, "")): str,
-                    vol.Optional(CONF_STOPS_CSV, default=user_input.get(CONF_STOPS_CSV, "")): str,
                 }
             ),
             errors=errors,
@@ -334,13 +315,9 @@ class DaejeonBusOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        errors: dict[str, str] = {}
         if user_input is not None:
             data = {k: (v.strip() if isinstance(v, str) else v) for k, v in user_input.items()}
-            if csv_error := await _validate_csv(self.hass, data.get(CONF_STOPS_CSV)):
-                errors[CONF_STOPS_CSV] = csv_error
-            else:
-                return self.async_create_entry(title="", data=data)
+            return self.async_create_entry(title="", data=data)
 
         conf = {**self.config_entry.data, **self.config_entry.options, **(user_input or {})}
         schema: dict = {vol.Required(CONF_API_KEY, default=conf.get(CONF_API_KEY, "")): str}
@@ -360,7 +337,6 @@ class DaejeonBusOptionsFlow(OptionsFlow):
                 {
                     vol.Optional(CONF_STATION_NAME, default=conf.get(CONF_STATION_NAME, "")): str,
                     vol.Optional(CONF_INCLUDE_BUSES, default=conf.get(CONF_INCLUDE_BUSES, "")): str,
-                    vol.Optional(CONF_STOPS_CSV, default=conf.get(CONF_STOPS_CSV, "")): str,
                     vol.Optional(
                         CONF_SOON_MINUTES,
                         default=conf.get(CONF_SOON_MINUTES, DEFAULT_SOON_MINUTES),
@@ -369,5 +345,5 @@ class DaejeonBusOptionsFlow(OptionsFlow):
             )
         schema.update(_auto_refresh_schema(conf))
         return self.async_show_form(
-            step_id="init", data_schema=vol.Schema(schema), errors=errors
+            step_id="init", data_schema=vol.Schema(schema)
         )
