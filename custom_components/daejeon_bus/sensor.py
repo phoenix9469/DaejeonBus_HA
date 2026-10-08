@@ -286,8 +286,9 @@ def commute_bus_info(index: int, bus: dict[str, Any]) -> dict[str, Any]:
         "현재 정류장 ID": bus["current_stop_id"],
     }
     if bus.get("eta_seconds") is not None:
-        info["도착예정(분)"] = _minutes(bus["eta_seconds"])
         info["도착예정시간"] = format_seconds(bus["eta_seconds"])
+        info["도착예정(초)"] = bus["eta_seconds"]
+        info["도착예정(분)"] = _minutes(bus["eta_seconds"])
     return info
 
 
@@ -349,13 +350,12 @@ class CommuteStopsSensor(CommuteEntity, SensorEntity):
 
 
 class CommuteMinutesSensor(CommuteEntity, SensorEntity):
-    """지금 오는(첫 번째) 버스의 도착예정(분). 도착정보 API 값만 사용."""
+    """지금 오는(첫 번째) 버스의 도착예정 ('4분 48초'). 도착정보 API 값만 사용.
+
+    자동화용 숫자는 속성 '도착예정(초)', '도착예정(분)'에 있다.
+    """
 
     _attr_icon = "mdi:bus-clock"
-    _attr_device_class = SensorDeviceClass.DURATION
-    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_suggested_display_precision = 0
 
     def __init__(self, coordinator: CommuteCoordinator) -> None:
         super().__init__(coordinator)
@@ -363,9 +363,9 @@ class CommuteMinutesSensor(CommuteEntity, SensorEntity):
         self._attr_name = "첫 번째 버스 도착예정"
 
     @property
-    def native_value(self) -> float | None:
+    def native_value(self) -> str | None:
         buses = self._buses
-        return _minutes(buses[0].get("eta_seconds")) if buses else None
+        return format_seconds(buses[0].get("eta_seconds")) if buses else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:

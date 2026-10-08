@@ -121,7 +121,7 @@ def format_seconds(sec: int | None) -> str | None:
     if sec < 60:
         return f"{sec}초"
     minutes, seconds = divmod(sec, 60)
-    return f"{minutes}분 {seconds}초" if seconds else f"{minutes}분"
+    return f"{minutes}분 {seconds}초"
 
 
 def group_arrivals(items: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:

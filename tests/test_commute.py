@@ -210,8 +210,9 @@ async def test_commute_entities(hass):
 
         prefix = "daejeon_bus_commute_213_31770"
         assert hass.states.get(f"sensor.{prefix}_first_stops").state == "3"
-        assert hass.states.get(f"sensor.{prefix}_first_minutes").state == "5.0"
+        assert hass.states.get(f"sensor.{prefix}_first_minutes").state == "5분 0초"
         first = hass.states.get(f"sensor.{prefix}_first_minutes").attributes
+        assert first["도착예정(초)"] == 300 and first["도착예정(분)"] == 5.0
         assert first["현재 정류장"] == "아이빌딩" and first["남은 거리(m)"] == 1464
         second = hass.states.get(f"sensor.{prefix}_second_stops")
         assert second.state == "9"

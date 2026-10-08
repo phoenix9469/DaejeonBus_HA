@@ -1,0 +1,98 @@
+# 정류장 도착정보 대시보드 카드
+# 필요한 HACS 프런트엔드: Mushroom (piitaya/lovelace-mushroom), button-card (custom-cards/button-card)
+# 사용법: 대시보드 편집 → 카드 추가 → 수동 → 아래 전체를 붙여넣기
+#   'daejeon_bus_31770' 을 내 정류장 엔티티 이름으로 바꾸세요 (찾아 바꾸기).
+type: vertical-stack
+cards:
+  # ── 1. 정류장 머리글 ──────────────────────────────────────────
+  - type: custom:mushroom-template-card
+    entity: sensor.daejeon_bus_31770
+    primary: >-
+      {{ state_attr(entity, '정류소 이름') or '정류장' }}
+      ({{ state_attr(entity, '정류소 ID(arsId)') }})
+    secondary: >-
+      {% set n = states(entity) | int(0) %}
+      {% set t = states('sensor.daejeon_bus_31770_last_update') %}
+      도착예정 {{ n }}대
+      {%- if t not in ['unknown', 'unavailable'] %}
+      · {{ as_timestamp(t) | timestamp_custom('%H:%M:%S') }} 조회{% endif %}
+    icon: mdi:bus-stop
+    icon_color: blue
+    fill_container: true
+    tap_action:
+      action: perform-action
+      perform_action: button.press
+      target:
+        entity_id: button.daejeon_bus_31770_refresh
+    hold_action:
+      action: more-info
+
+  # ── 2. 노선별 도착 목록 ───────────────────────────────────────
+  - type: custom:button-card
+    entity: sensor.daejeon_bus_31770
+    show_name: false
+    show_icon: false
+    show_state: false
+    tap_action:
+      action: none
+    styles:
+      card:
+        - padding: 4px 12px
+      grid:
+        - grid-template-areas: '"list"'
+      custom_fields:
+        list:
+          - justify-self: stretch
+          - text-align: left
+    custom_fields:
+      list: |
+        [[[
+          const buses = (entity && entity.attributes['버스 목록']) || [];
+          if (!buses.length) {
+            return `<div style="color:var(--secondary-text-color);padding:12px 4px">도착 예정인 버스가 없습니다</div>`;
+          }
+          // 대전 시내버스 노선유형 색
+          const typeColor = {
+            '급행': '#e53935', '간선': '#1e88e5', '지선': '#43a047',
+            '외곽': '#8d6e63', '마을': '#fb8c00', '첨단': '#8e24aa',
+          };
+          const pill = (text, bg) =>
+            `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;
+                          font-weight:600;color:#fff;background:${bg}">${text}</span>`;
+          return buses.map((b, i) => {
+            const status = b['운행 상태'];
+            const color = typeColor[b['노선유형']] || 'var(--primary-color)';
+            let right;
+            if (status === '진입중' || status === '도착') {
+              right = pill(status, 'var(--error-color, #db4437)');
+            } else if (status === '운행대기') {
+              right = pill('운행대기', 'var(--disabled-text-color, #9e9e9e)');
+            } else {
+              const soon = status === '곧 도착';
+              const main = soon ? '곧 도착' : (b['도착예정시간'] || '-');
+              const stops = b['잔여 정류장 수'];
+              right = `
+                <div style="font-weight:700;font-size:15px;
+                            color:${soon ? 'var(--error-color, #db4437)' : 'var(--primary-text-color)'}">${main}</div>
+                <div style="font-size:12px;color:var(--secondary-text-color)">
+                  ${stops != null ? stops + '정류장 전' : ''}${soon && b['도착예정시간'] ? ' · ' + b['도착예정시간'] : ''}
+                </div>`;
+            }
+            const tag = (b['첫/막차'] === '첫차' || b['첫/막차'] === '막차')
+              ? ' ' + pill(b['첫/막차'], '#455a64') : '';
+            const last = b['최근 통과 정류소'] ? `${b['최근 통과 정류소']} 통과` : '';
+            const border = i < buses.length - 1 ? 'border-bottom:1px solid var(--divider-color, rgba(127,127,127,.2));' : '';
+            return `
+              <div style="display:flex;align-items:center;gap:12px;padding:10px 4px;${border}">
+                <div style="min-width:52px;text-align:center;padding:4px 6px;border-radius:8px;
+                            font-weight:700;font-size:15px;color:#fff;background:${color}">${b['노선']}</div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-weight:600;color:var(--primary-text-color);white-space:nowrap;
+                              overflow:hidden;text-overflow:ellipsis">${b['행선지'] || ''} 방면${tag}</div>
+                  <div style="font-size:12px;color:var(--secondary-text-color);white-space:nowrap;
+                              overflow:hidden;text-overflow:ellipsis">${last}</div>
+                </div>
+                <div style="text-align:right;white-space:nowrap">${right}</div>
+              </div>`;
+          }).join('');
+        ]]]

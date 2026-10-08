@@ -215,7 +215,7 @@ flowchart LR
 | 엔티티 | 상태 예시 | 내용 |
 | --- | --- | --- |
 | `sensor.daejeon_bus_commute_213_31770_first_stops` | `3` (정류장) | 첫 번째 버스 **몇 정류장 전** |
-| `sensor.daejeon_bus_commute_213_31770_first_minutes` | `5.0` (분) | 첫 번째 버스 도착예정 |
+| `sensor.daejeon_bus_commute_213_31770_first_minutes` | `4분 48초` | 첫 번째 버스 도착예정 (분·초). 자동화용 숫자는 속성 `도착예정(초)`, `도착예정(분)` |
 | `sensor.daejeon_bus_commute_213_31770_second_stops` | `9` (정류장) | 두 번째 버스 **몇 정류장 전** (도착예정시간 없음) |
 | `sensor.daejeon_bus_commute_213_31770_leave_in` | `1.0` (분) | 출발까지 남은 시간 |
 | `binary_sensor.daejeon_bus_commute_213_31770_leave_now` | on / off | 출발까지 ≤ 출발 알림 여유이면 on |
@@ -229,7 +229,7 @@ flowchart LR
 | --- | --- |
 | `남은 정류장` | 몇 정류장 전 |
 | `남은 거리(m)` | 내 정류장까지 거리 |
-| `도착예정(분)`, `도착예정시간` | 예: `5.0`, `5분`. **지금 오는 버스에만** 있음 |
+| `도착예정시간`, `도착예정(초)`, `도착예정(분)` | 예: `4분 48초`, `288`, `4.8`. **지금 오는 버스에만** 있음 |
 | `현재 정류장`, `현재 정류장 ID` | 버스가 지금 있는(지난) 정류장 |
 | `차량번호` | |
 
@@ -291,9 +291,48 @@ actions:
 | `LAST_CAT` | 첫/막차 구분 | 1 첫차 · 2 막차 · 3 일반 (운행대기 차량은 0으로 오기도 함) | `첫/막차` |
 | `INFO_OFFER_TM` | 정보 생성 시간 | | `정보 제공 시각` |
 
-## 대시보드 예시
+## 대시보드
 
-### 정류장 도착정보
+![대시보드 미리보기](docs/dashboard_preview.png)
+
+*위 이미지는 실제 응답 샘플(213번 노선, 갈마네거리 31770)로 만든 미리보기입니다. 실제 화면에서는 아이콘이 MDI 아이콘으로 나옵니다.*
+
+### HACS 카드로 꾸미기 (권장)
+HACS → 프런트엔드에서 아래 두 카드를 설치합니다.
+
+| 카드 | 저장소 | 쓰는 곳 |
+| --- | --- | --- |
+| Mushroom | [piitaya/lovelace-mushroom](https://github.com/piitaya/lovelace-mushroom) | 머리글, 요약 칩 |
+| button-card | [custom-cards/button-card](https://github.com/custom-cards/button-card) | 버스 목록, 진행 막대 |
+
+설치 후 대시보드 편집 → 카드 추가 → **수동**에 아래 파일 내용을 붙여넣습니다. 엔티티 이름(`daejeon_bus_commute_213_31770`, `daejeon_bus_31770`)은 내 항목에 맞게 바꾸세요.
+
+| 파일 | 카드 구성 |
+| --- | --- |
+| [`dashboards/route_lookup.yaml`](dashboards/route_lookup.yaml) | **노선으로 조회** (아래 표) |
+| [`dashboards/station_arrivals.yaml`](dashboards/station_arrivals.yaml) | **정류장 도착정보** (아래 표) |
+
+**노선으로 조회 카드**
+
+| 구성 | 내용 |
+| --- | --- |
+| 출발 안내 | `지금 출발`은 빨강, `N분 M초 후 출발`은 초록, `놓침`은 주황. 누르면 새로고침 |
+| 요약 칩 | 첫 버스 도착예정(분·초), 몇 정류장 전, 도보 시간, 조회 시각, 새로고침 |
+| 오고 있는 버스 | 최대 5대. 내 정류장에 가까울수록 막대가 깁니다. 첫 버스만 도착예정시간을 표시하고, 3정류장 이내면 빨간색입니다 |
+
+`variables`의 `max_rows`(보여줄 버스 수)와 `scale_stops`(막대 기준 정류장 수)로 조절할 수 있습니다.
+
+**정류장 도착정보 카드**
+
+| 구성 | 내용 |
+| --- | --- |
+| 머리글 | 정류장 이름, 도착예정 버스 수, 조회 시각. 누르면 새로고침, 길게 누르면 상세 |
+| 노선 목록 | 노선번호 배지(노선유형별 색: 급행 빨강 · 간선 파랑 · 지선 초록 · 외곽 갈색 · 마을 주황 · 첨단 보라), 행선지, 최근 통과 정류장, 도착예정 |
+| 상태 강조 | `곧 도착`·`진입중`은 빨간색, `운행대기`는 회색, `첫차`·`막차`는 태그로 표시 |
+
+### HACS 없이 (기본 카드)
+
+#### 정류장 도착정보
 ```yaml
 type: vertical-stack
 cards:
@@ -318,7 +357,7 @@ cards:
       {% endfor %}
 ```
 
-### 노선으로 조회
+#### 노선으로 조회
 ```yaml
 type: vertical-stack
 cards:
