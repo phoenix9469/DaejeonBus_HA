@@ -20,8 +20,10 @@ from homeassistant.util import dt as dt_util
 from .api import DaejeonBusApi, DaejeonBusAuthError, DaejeonBusError
 from .const import (
     CONF_INCLUDE_BUSES,
+    CONF_SOON_MINUTES,
     CONF_STATION_ID,
     CONF_STOPS_CSV,
+    DEFAULT_SOON_MINUTES,
     DOMAIN,
     MSG_TP_ARRIVED,
     MSG_TP_ENTERING,
@@ -29,6 +31,7 @@ from .const import (
     STATUS_ARRIVED,
     STATUS_ENTERING,
     STATUS_RUNNING,
+    STATUS_SOON,
     STATUS_WAITING,
 )
 from .stops import load_stop_names
@@ -63,8 +66,11 @@ def msg_type(item: dict[str, Any]) -> str:
     return str(item.get("MSG_TP") or "").strip()
 
 
-def bus_status(item: dict[str, Any]) -> str:
-    """운행 상태: 도착 / 진입중 / 운행대기 / 운행중."""
+def bus_status(item: dict[str, Any], soon_seconds: int = 0) -> str:
+    """운행 상태: 도착 / 진입중 / 곧 도착 / 운행대기 / 운행중.
+
+    soon_seconds 이하로 남은 운행중 버스는 '곧 도착'이다 (0이면 사용 안 함).
+    """
     tp = msg_type(item)
     if tp == MSG_TP_ARRIVED:
         return STATUS_ARRIVED
@@ -72,6 +78,9 @@ def bus_status(item: dict[str, Any]) -> str:
         return STATUS_ENTERING
     if tp == MSG_TP_WAITING:
         return STATUS_WAITING
+    sec = arrival_seconds(item)
+    if soon_seconds > 0 and sec is not None and sec <= soon_seconds:
+        return STATUS_SOON
     return STATUS_RUNNING
 
 
@@ -129,6 +138,15 @@ class DaejeonBusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @property
     def conf(self) -> dict[str, Any]:
         return {**self.config_entry.data, **self.config_entry.options}
+
+    @property
+    def soon_seconds(self) -> int:
+        """'곧 도착'으로 표시할 기준(초)."""
+        try:
+            minutes = float(self.conf.get(CONF_SOON_MINUTES, DEFAULT_SOON_MINUTES))
+        except (TypeError, ValueError):
+            minutes = DEFAULT_SOON_MINUTES
+        return max(0, int(minutes * 60))
 
     def stop_name(self, ars_id: Any) -> str | None:
         ars_id = str(ars_id or "").strip()

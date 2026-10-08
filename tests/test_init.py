@@ -29,12 +29,16 @@ async def test_setup_and_refresh(hass):
         lookup.assert_not_called()  # 내장 목록에 있는 정류소는 API 호출 안 함
 
         state = hass.states.get("sensor.daejeon_bus_31770_3")
-        assert state.state == "48초"
+        assert state.state == "곧 도착"  # 기본 기준 3분 이하
+        assert state.attributes["운행 상태"] == "곧 도착"
+        assert state.attributes["도착예정시간"] == "48초"
         assert state.attributes["잔여 정류장 수"] == 1
         assert state.attributes["최근 통과 정류소"] == "갈마육교"
         assert state.attributes["최근 통과 정류소 ID"] == "31910"
+
+        state = hass.states.get("sensor.daejeon_bus_31770_103")
+        assert state.state == "5분 7초"
         assert state.attributes["운행 상태"] == "운행중"
-        assert hass.states.get("sensor.daejeon_bus_31770_103").state == "5분 7초"
         assert hass.states.get("sensor.daejeon_bus_31770").state == "2"
         assert hass.states.get("sensor.daejeon_bus_31770_116") is None
 
@@ -136,3 +140,23 @@ def test_parse_daejeon_stop_status_csv():
     expected = {"10010": "대전역/중앙시장", "10020": "원동네거리"}
     assert parse_csv(text) == expected
     assert parse_csv(text.replace(",", "\t")) == expected
+
+
+async def test_soon_threshold_option(hass):
+    """'곧 도착' 기준을 바꾸거나 0으로 끌 수 있다."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"api_key": "k", CONF_STATION_ID: "31770"},
+        options={"soon_minutes": 0},
+        unique_id="31770",
+    )
+    entry.add_to_hass(hass)
+    with patch.object(DaejeonBusApi, "get_arrivals", return_value=ITEMS[:2]):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        assert hass.states.get("sensor.daejeon_bus_31770_3").state == "48초"
+
+        hass.config_entries.async_update_entry(entry, options={"soon_minutes": 6})
+        await hass.async_block_till_done()  # 옵션 변경 시 다시 로드
+        assert hass.states.get("sensor.daejeon_bus_31770_3").state == "곧 도착"
+        assert hass.states.get("sensor.daejeon_bus_31770_103").state == "곧 도착"

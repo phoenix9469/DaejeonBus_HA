@@ -16,6 +16,9 @@ CONF_STATION_ID = "station_id"
 CONF_STATION_NAME = "station_name"
 CONF_INCLUDE_BUSES = "include_buses"
 CONF_STOPS_CSV = "stops_csv"
+CONF_SOON_MINUTES = "soon_minutes"
+
+DEFAULT_SOON_MINUTES = 3
 
 # ---- 활용가이드(OpenAPI 활용가이드 v1.3) 코드표 ----
 
@@ -37,6 +40,7 @@ MSG_TP_NAMES = {
 
 STATUS_ARRIVED = "도착"
 STATUS_ENTERING = "진입중"
+STATUS_SOON = "곧 도착"
 STATUS_WAITING = "운행대기"
 STATUS_RUNNING = "운행중"
 

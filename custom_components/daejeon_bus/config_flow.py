@@ -8,14 +8,17 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_API_KEY
 from homeassistant.core import callback
+from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import DaejeonBusApi, DaejeonBusAuthError, DaejeonBusError
 from .const import (
     CONF_INCLUDE_BUSES,
+    CONF_SOON_MINUTES,
     CONF_STATION_ID,
     CONF_STATION_NAME,
     CONF_STOPS_CSV,
+    DEFAULT_SOON_MINUTES,
     DOMAIN,
 )
 from .stops import load_csv
@@ -115,6 +118,18 @@ class DaejeonBusOptionsFlow(OptionsFlow):
                     vol.Optional(CONF_STATION_NAME, default=conf.get(CONF_STATION_NAME, "")): str,
                     vol.Optional(CONF_INCLUDE_BUSES, default=conf.get(CONF_INCLUDE_BUSES, "")): str,
                     vol.Optional(CONF_STOPS_CSV, default=conf.get(CONF_STOPS_CSV, "")): str,
+                    vol.Optional(
+                        CONF_SOON_MINUTES,
+                        default=conf.get(CONF_SOON_MINUTES, DEFAULT_SOON_MINUTES),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            max=30,
+                            step=1,
+                            unit_of_measurement="분",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
                 }
             ),
             errors=errors,

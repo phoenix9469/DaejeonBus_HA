@@ -20,6 +20,7 @@ from .const import (
     ROUTE_TP_NAMES,
     STATUS_ARRIVED,
     STATUS_ENTERING,
+    STATUS_SOON,
     STATUS_WAITING,
 )
 from .coordinator import (
@@ -41,17 +42,17 @@ def _route_unique_id(station_id: str, route_no: str) -> str:
     return f"{DOMAIN}_{station_id}_route_{route_no}"
 
 
-def arrival_text(item: dict[str, Any]) -> str | None:
-    """상태로 보여줄 문구: 도착 / 진입중 / 운행대기 / 'N분 M초'."""
-    status = bus_status(item)
-    if status in (STATUS_ARRIVED, STATUS_ENTERING, STATUS_WAITING):
+def arrival_text(coordinator: DaejeonBusCoordinator, item: dict[str, Any]) -> str | None:
+    """상태로 보여줄 문구: 도착 / 진입중 / 곧 도착 / 운행대기 / 'N분 M초'."""
+    status = bus_status(item, coordinator.soon_seconds)
+    if status in (STATUS_ARRIVED, STATUS_ENTERING, STATUS_SOON, STATUS_WAITING):
         return status
     return format_seconds(arrival_seconds(item))
 
 
 def bus_info(coordinator: DaejeonBusCoordinator, item: dict[str, Any]) -> dict[str, Any]:
     """버스 1대의 도착정보를 사용자용 속성으로 변환."""
-    status = bus_status(item)
+    status = bus_status(item, coordinator.soon_seconds)
     tp = msg_type(item)
     last_cat = str(item.get("LAST_CAT") or "").strip()
     info: dict[str, Any] = {
@@ -168,7 +169,7 @@ class DaejeonBusStationSensor(DaejeonBusEntity, SensorEntity):
                 "노선유형": ROUTE_TP_NAMES.get(
                     str(first.get("ROUTE_TP") or "").strip()
                 ),
-                "도착예정": arrival_text(first),
+                "도착예정": arrival_text(self.coordinator, first),
                 **bus_info(self.coordinator, first),
             }
             for first in firsts
@@ -224,7 +225,7 @@ class DaejeonBusRouteSensor(DaejeonBusEntity, SensorEntity):
         items = self._items
         if not items:
             return NO_INFO
-        return arrival_text(items[0]) or NO_INFO
+        return arrival_text(self.coordinator, items[0]) or NO_INFO
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
