@@ -1,0 +1,17 @@
+{
+  "domain": "daejeon_bus",
+  "name": "대전 버스 (Daejeon Bus)",
+  "codeowners": [
+    "@phoenix9469"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/phoenix9469/DaejeonBus_HA",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/phoenix9469/DaejeonBus_HA/issues",
+  "requirements": [
+    "xmltodict>=0.13.0"
+  ],
+  "version": "1.0.0"
+}

@@ -1,0 +1,47 @@
+{
+  "title": "대전 버스 (Daejeon Bus)",
+  "config": {
+    "step": {
+      "user": {
+        "title": "대전 버스 (Daejeon Bus)",
+        "description": "정류소의 버스 도착정보를 조회합니다. 자동 갱신은 하지 않으며, 새로고침 버튼을 누를 때만 조회합니다.",
+        "data": {
+          "api_key": "API 키 (서비스키)",
+          "station_id": "정류소 번호 (arsId)",
+          "station_name": "정류소 이름 (선택)",
+          "include_buses": "대상 버스 목록 (선택)"
+        },
+        "data_description": {
+          "api_key": "공공데이터포털에서 발급받은 대전광역시 버스도착정보 서비스키 (인코딩/디코딩 키 모두 가능)",
+          "station_id": "정류소 표지판에 적힌 5자리 번호 (예: 31770)",
+          "station_name": "비워두면 API의 정류소 이름을 사용합니다",
+          "include_buses": "쉼표로 구분한 노선번호 (예: 3,103,119). 비워두면 전체 노선"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "서비스키가 올바르지 않거나 등록되지 않았습니다.",
+      "cannot_connect": "API 호출에 실패했습니다. 정류소 번호와 네트워크를 확인하세요."
+    },
+    "abort": {
+      "already_configured": "이미 등록된 정류소입니다."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "대전 버스 (Daejeon Bus)",
+        "data": {
+          "api_key": "API 키 (서비스키)",
+          "station_name": "정류소 이름 (선택)",
+          "include_buses": "대상 버스 목록 (선택)"
+        },
+        "data_description": {
+          "api_key": "공공데이터포털에서 발급받은 대전광역시 버스도착정보 서비스키 (인코딩/디코딩 키 모두 가능)",
+          "station_name": "비워두면 API의 정류소 이름을 사용합니다",
+          "include_buses": "쉼표로 구분한 노선번호 (예: 3,103,119). 비워두면 전체 노선"
+        }
+      }
+    }
+  }
+}
