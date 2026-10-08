@@ -4,7 +4,15 @@
     "step": {
       "user": {
         "title": "대전 버스 (Daejeon Bus)",
-        "description": "정류소의 버스 도착정보를 조회합니다. 자동 갱신은 하지 않으며, 새로고침 버튼을 누를 때만 조회합니다.",
+        "description": "추가할 항목 유형을 고르세요.",
+        "menu_options": {
+          "station": "정류소 도착정보 — 정류소에 오는 모든 버스 보기",
+          "commute": "출근 알리미 — 특정 노선이 내 정류장까지 몇 정류장 전인지, 언제 나가면 되는지"
+        }
+      },
+      "station": {
+        "title": "정류소 도착정보",
+        "description": "정류소의 버스 도착정보를 조회합니다. 새로고침 버튼을 누를 때 조회합니다 (자동 조회는 추가 후 '구성'에서 켤 수 있습니다).",
         "data": {
           "api_key": "API 키 (서비스키)",
           "station_id": "정류소 번호 (arsId)",
@@ -19,16 +27,55 @@
           "include_buses": "쉼표로 구분한 노선번호 (예: 3,103,119). 비워두면 전체 노선",
           "stops_csv": "최근 통과 정류소 이름 변환용 CSV. 예: /config/daejeon_bus_stops.csv. 정류소번호(모바일단축번호/BUS_STOP_ID/arsId)와 정류소명(정류장명/BUSSTOP_NM) 열이 있어야 합니다. UTF-8/CP949 모두 가능. 비워두면 내장 목록과 정류소정보 API를 사용합니다."
         }
+      },
+      "commute": {
+        "title": "출근 알리미 (1/3) 내 정류장",
+        "description": "버스를 타는 정류장 번호를 입력하세요. 이 정류장의 도착정보로 노선 목록을 만듭니다.",
+        "data": {
+          "api_key": "API 키 (서비스키)",
+          "station_id": "내 정류장 번호 (arsId)"
+        },
+        "data_description": {
+          "api_key": "공공데이터포털에서 발급받은 대전광역시 버스도착정보 서비스키 (인코딩/디코딩 키 모두 가능)",
+          "station_id": "정류소 표지판의 5자리 번호 (예: 31770)"
+        }
+      },
+      "commute_route": {
+        "title": "출근 알리미 (2/3) 노선",
+        "description": "탈 노선을 고르세요. 목록에 없으면(심야 등) 노선번호나 노선 ID(8자리, 예: 30300146)를 직접 입력하세요.",
+        "data": {
+          "route_cd": "노선"
+        }
+      },
+      "commute_direction": {
+        "title": "출근 알리미 노선 방향",
+        "description": "이 노선은 내 정류장을 두 번 지납니다. 타는 방향을 고르세요.",
+        "data": {
+          "stop_seq": "방향"
+        }
+      },
+      "commute_settings": {
+        "title": "출근 알리미 (3/3) 출발 기준",
+        "data": {
+          "walk_minutes": "도보 시간 (분)",
+          "leave_margin": "출발 알림 여유 (분)"
+        },
+        "data_description": {
+          "walk_minutes": "집에서 정류장까지 걸리는 시간. 도착예정시간이 이보다 짧은 버스는 놓친 것으로 보고 다음 버스를 기준으로 합니다.",
+          "leave_margin": "'출발까지'가 이 값 이하가 되면 '지금 출발'(바이너리 센서 on)이 됩니다."
+        }
       }
     },
     "error": {
       "invalid_auth": "서비스키가 올바르지 않거나 등록되지 않았습니다.",
       "cannot_connect": "API 호출에 실패했습니다. 정류소 번호와 네트워크를 확인하세요.",
       "csv_not_found": "CSV 파일을 찾을 수 없습니다. Home Assistant 기준 경로(예: /config/...)인지 확인하세요.",
-      "csv_invalid": "CSV에서 정류소 번호/이름 열을 찾지 못했습니다."
+      "csv_invalid": "CSV에서 정류소 번호/이름 열을 찾지 못했습니다.",
+      "route_not_found": "노선 정류소 목록을 받지 못했습니다. 노선 ID를 확인하세요.",
+      "stop_not_on_route": "이 노선은 입력한 정류장을 지나지 않습니다."
     },
     "abort": {
-      "already_configured": "이미 등록된 정류소입니다."
+      "already_configured": "이미 등록된 항목입니다."
     }
   },
   "options": {
@@ -40,20 +87,45 @@
           "station_name": "정류소 이름 (선택)",
           "include_buses": "대상 버스 목록 (선택)",
           "stops_csv": "정류소 CSV 파일 경로 (선택)",
-          "soon_minutes": "'곧 도착' 기준 (분)"
+          "soon_minutes": "'곧 도착' 기준 (분)",
+          "walk_minutes": "도보 시간 (분)",
+          "leave_margin": "출발 알림 여유 (분)",
+          "auto_refresh": "자동 조회 사용 (테스트용)",
+          "auto_start": "자동 조회 시작 시각",
+          "auto_end": "자동 조회 종료 시각",
+          "auto_weekdays": "자동 조회 요일",
+          "auto_interval": "자동 조회 간격 (초)"
         },
         "data_description": {
           "api_key": "공공데이터포털에서 발급받은 대전광역시 버스도착정보 서비스키 (인코딩/디코딩 키 모두 가능)",
           "station_name": "비워두면 API의 정류소 이름을 사용합니다",
           "include_buses": "쉼표로 구분한 노선번호 (예: 3,103,119). 비워두면 전체 노선",
           "stops_csv": "최근 통과 정류소 이름 변환용 CSV. 예: /config/daejeon_bus_stops.csv. 정류소번호(모바일단축번호/BUS_STOP_ID/arsId)와 정류소명(정류장명/BUSSTOP_NM) 열이 있어야 합니다. UTF-8/CP949 모두 가능. 비워두면 내장 목록과 정류소정보 API를 사용합니다.",
-          "soon_minutes": "도착예정시간이 이 값 이하인 버스는 '곧 도착'으로 표시합니다. 0이면 사용하지 않습니다."
+          "soon_minutes": "도착예정시간이 이 값 이하인 버스는 '곧 도착'으로 표시합니다. 0이면 사용하지 않습니다.",
+          "walk_minutes": "집에서 정류장까지 걸리는 시간. 도착예정시간이 이보다 짧은 버스는 놓친 것으로 보고 다음 버스를 기준으로 합니다.",
+          "leave_margin": "'출발까지'가 이 값 이하가 되면 '지금 출발'(바이너리 센서 on)이 됩니다.",
+          "auto_refresh": "켜면 지정한 요일·시간대에만 주기적으로 조회합니다. 끄면 새로고침 버튼을 누를 때만 조회합니다.",
+          "auto_start": "시작과 종료가 같으면 하루 종일. 자정을 넘는 구간도 됩니다.",
+          "auto_interval": "최소 30초. 공공데이터포털 개발 키는 하루 호출 수 제한(보통 1,000회)이 있으니 주의하세요. 출근 알리미는 1회 조회에 API 2번을 씁니다."
         }
       }
     },
     "error": {
       "csv_not_found": "CSV 파일을 찾을 수 없습니다. Home Assistant 기준 경로(예: /config/...)인지 확인하세요.",
       "csv_invalid": "CSV에서 정류소 번호/이름 열을 찾지 못했습니다."
+    }
+  },
+  "selector": {
+    "weekday": {
+      "options": {
+        "mon": "월",
+        "tue": "화",
+        "wed": "수",
+        "thu": "목",
+        "fri": "금",
+        "sat": "토",
+        "sun": "일"
+      }
     }
   }
 }

@@ -75,12 +75,20 @@ async def test_config_flow(hass):
         patch("custom_components.daejeon_bus.async_setup_entry", return_value=True),
     ):
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+        assert result["type"] == "menu"
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "station"}
+        )
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {"api_key": " dev-key ", CONF_STATION_ID: "31770"}
         )
     assert result["type"] == "create_entry"
     assert result["title"] == "갈마네거리 (31770)"
-    assert result["data"] == {"api_key": "dev-key", CONF_STATION_ID: "31770"}
+    assert result["data"] == {
+        "entry_type": "station",
+        "api_key": "dev-key",
+        CONF_STATION_ID: "31770",
+    }
 
 
 async def test_stop_name_lookup(hass, tmp_path):

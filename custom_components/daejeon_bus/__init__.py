@@ -5,15 +5,20 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
-from .coordinator import DaejeonBusCoordinator
+from .const import CONF_ENTRY_TYPE, DOMAIN, ENTRY_TYPE_COMMUTE
+from .coordinator import CommuteCoordinator, DaejeonBusBaseCoordinator, StationCoordinator
 
-PLATFORMS = [Platform.SENSOR, Platform.BUTTON]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    coordinator = DaejeonBusCoordinator(hass, entry)
+    coordinator: DaejeonBusBaseCoordinator
+    if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_COMMUTE:
+        coordinator = CommuteCoordinator(hass, entry)
+    else:
+        coordinator = StationCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
+    coordinator.async_setup_auto_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

@@ -10,7 +10,7 @@ import aiohttp
 import xmltodict
 from yarl import URL
 
-from .const import ARRIVE_URL, STATION_URLS
+from .const import ARRIVE_URL, BUS_POS_URL, ROUTE_STOPS_URL, STATION_URLS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -111,6 +111,14 @@ class DaejeonBusApi:
         """정류소(arsId)의 버스 도착정보."""
         return await self._get(ARRIVE_URL, arsId=ars_id)
 
+
+    async def get_bus_positions(self, route_cd: str) -> list[dict[str, Any]]:
+        """노선(busRouteId)에서 운행 중인 버스 위치."""
+        return await self._get(BUS_POS_URL, busRouteId=route_cd)
+
+    async def get_route_stops(self, route_cd: str) -> list[dict[str, Any]]:
+        """노선(busRouteId)의 경유 정류소 목록."""
+        return await self._get(ROUTE_STOPS_URL, busRouteId=route_cd)
 
     async def get_station_name(self, ars_id: str) -> str | None:
         """정류소(arsId)의 이름(BUSSTOP_NM). 정류소정보 조회 서비스 사용.
