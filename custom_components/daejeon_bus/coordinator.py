@@ -5,7 +5,9 @@
 """
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -17,9 +19,29 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .api import DaejeonBusApi, DaejeonBusAuthError, DaejeonBusError
-from .const import CONF_INCLUDE_BUSES, CONF_STATION_ID, DOMAIN
+from .const import (
+    CONF_INCLUDE_BUSES,
+    CONF_STATION_ID,
+    DOMAIN,
+    MSG_TP_ENTERING,
+    MSG_TP_WAITING,
+    STATUS_ENTERING,
+    STATUS_RUNNING,
+    STATUS_WAITING,
+)
 
 _LOGGER = logging.getLogger(__name__)
+
+# 대전 정류소 arsId -> 정류소 이름 (국토교통부 전국 버스정류장 위치정보 기반)
+STOPS_FILE = Path(__file__).parent / "stops.json"
+
+
+def load_stop_names() -> dict[str, str]:
+    try:
+        return json.loads(STOPS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as err:
+        _LOGGER.warning("정류소 이름 목록을 읽지 못했습니다: %s", err)
+        return {}
 
 
 def parse_targets(value: str | None) -> list[str]:
@@ -45,6 +67,26 @@ def arrival_seconds(item: dict[str, Any]) -> int | None:
     return minutes * 60 if minutes is not None else None
 
 
+def msg_type(item: dict[str, Any]) -> str:
+    return str(item.get("MSG_TP") or "").strip()
+
+
+def bus_status(item: dict[str, Any]) -> str:
+    """운행 상태: 진입중 / 운행대기 / 운행중."""
+    tp = msg_type(item)
+    if tp == MSG_TP_ENTERING:
+        return STATUS_ENTERING
+    if tp == MSG_TP_WAITING:
+        return STATUS_WAITING
+    return STATUS_RUNNING
+
+
+def sort_key(item: dict[str, Any]) -> tuple[int, int]:
+    """운행대기 버스는 맨 뒤, 나머지는 도착 예정 순."""
+    sec = arrival_seconds(item)
+    return (msg_type(item) == MSG_TP_WAITING, sec if sec is not None else 1 << 30)
+
+
 def format_seconds(sec: int | None) -> str | None:
     """초를 'N분 M초' 형식으로."""
     if sec is None:
@@ -64,7 +106,7 @@ def group_arrivals(items: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]
             continue
         routes.setdefault(route_no, []).append(item)
     for buses in routes.values():
-        buses.sort(key=lambda i: s if (s := arrival_seconds(i)) is not None else 1 << 30)
+        buses.sort(key=sort_key)
     return routes
 
 
@@ -77,6 +119,7 @@ class DaejeonBusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         conf = {**entry.data, **entry.options}
         self.api = DaejeonBusApi(async_get_clientsession(hass), conf[CONF_API_KEY])
         self.last_success_time = None
+        self.stop_names: dict[str, str] | None = None
         super().__init__(
             hass,
             _LOGGER,
@@ -90,8 +133,16 @@ class DaejeonBusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def conf(self) -> dict[str, Any]:
         return {**self.config_entry.data, **self.config_entry.options}
 
+    def stop_name(self, ars_id: Any) -> str | None:
+        ars_id = str(ars_id or "").strip()
+        if not ars_id:
+            return None
+        return (self.stop_names or {}).get(ars_id)
+
     async def _async_update_data(self) -> dict[str, Any]:
         conf = self.conf
+        if self.stop_names is None:
+            self.stop_names = await self.hass.async_add_executor_job(load_stop_names)
         try:
             items = await self.api.get_arrivals(conf[CONF_STATION_ID])
         except DaejeonBusAuthError as err:

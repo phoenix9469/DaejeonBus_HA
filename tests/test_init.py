@@ -27,21 +27,30 @@ async def test_setup_and_refresh(hass):
         state = hass.states.get("sensor.daejeon_bus_31770_3")
         assert state.state == "48초"
         assert state.attributes["잔여 정류장 수"] == 1
-        assert state.attributes["최근 통과 정류소"] == "31910"
+        assert state.attributes["최근 통과 정류소"] == "갈마육교"
+        assert state.attributes["최근 통과 정류소 ID"] == "31910"
+        assert state.attributes["운행 상태"] == "운행중"
         assert hass.states.get("sensor.daejeon_bus_31770_103").state == "5분 7초"
         assert hass.states.get("sensor.daejeon_bus_31770").state == "2"
         assert hass.states.get("sensor.daejeon_bus_31770_116") is None
 
     # 버튼을 누를 때만 조회 + 새 노선 센서 추가
-    with patch.object(DaejeonBusApi, "get_arrivals", return_value=ITEMS) as mock:
+    entering = {**ITEMS[0], "MSG_TP": "06"}
+    with patch.object(
+        DaejeonBusApi, "get_arrivals", return_value=[entering, *ITEMS[1:]]
+    ) as mock:
         await hass.services.async_call(
             "button", "press", {"entity_id": "button.daejeon_bus_31770_refresh"}, blocking=True
         )
         await hass.async_block_till_done()
         assert mock.call_count == 1
+        assert hass.states.get("sensor.daejeon_bus_31770_3").state == "진입중"
         state = hass.states.get("sensor.daejeon_bus_31770_116")
-        assert state.state == "35분 10초"
-        assert state.attributes["최근 통과 정류소"] is None
+        assert state.state == "운행대기"
+        assert state.attributes["도착예정시간"] is None
+        station = hass.states.get("sensor.daejeon_bus_31770")
+        assert station.state == "2"  # 운행대기 제외
+        assert [b["노선"] for b in station.attributes["버스 목록"]] == ["3", "103", "116"]
 
     # 노선이 사라지면 '도착정보 없음'
     with patch.object(DaejeonBusApi, "get_arrivals", return_value=[]):
