@@ -59,28 +59,32 @@ def test_approaching_buses():
 def test_eta_and_leave_plan():
     stops, my_stop = _my_stop()
     buses = commute.approaching_buses(stops, my_stop, POSITIONS)
-    speed = commute.apply_eta(buses, ARRIVALS, ROUTE_CD, 250)
+    assert commute.first_bus_eta(buses, ARRIVALS, ROUTE_CD) == 300
 
-    # 첫 버스는 도착정보 값, 나머지는 그 버스로 보정한 속도로 추정
-    assert buses[0]["eta_seconds"] == 300 and not buses[0]["estimated"]
-    assert round(speed, 1) == round(1464 / 5, 1)
-    assert buses[1]["estimated"]
-    assert buses[1]["eta_seconds"] == int(5082 / speed * 60)
+    # 지금 오는 버스만 도착예정시간, 나머지는 추정하지 않음
+    assert buses[0]["eta_seconds"] == 300
+    assert all(b["eta_seconds"] is None for b in buses[1:])
 
     plan = commute.leave_plan(buses, walk_seconds=240)
     assert plan["index"] == 0 and plan["leave_in_seconds"] == 60
-    # 도보 6분이면 첫 버스(5분)는 놓침 -> 두 번째 버스 기준
-    plan = commute.leave_plan(buses, walk_seconds=360)
-    assert plan["index"] == 1
-    assert plan["leave_in_seconds"] == buses[1]["eta_seconds"] - 360
+    # 도보 6분이면 지금 오는 버스(5분)는 놓침
+    assert commute.leave_plan(buses, walk_seconds=360) is None
 
 
-def test_eta_without_arrival_uses_default_speed():
+def test_first_bus_eta_plate_mismatch_and_no_arrival():
     stops, my_stop = _my_stop()
     buses = commute.approaching_buses(stops, my_stop, POSITIONS)
-    commute.apply_eta(buses, [], ROUTE_CD, 250)
-    assert buses[0]["estimated"]
-    assert buses[0]["eta_seconds"] == int(1464 / 250 * 60)
+    # 차량번호가 다르면(두 API 갱신 시점 차이) 이 노선의 가장 빠른 도착정보 사용
+    other = [{**ARRIVALS[0], "CAR_REG_NO": "대전75자0000", "EXTIME_SEC": "280"}]
+    assert commute.first_bus_eta(buses, other, ROUTE_CD) == 280
+    # 다른 노선이나 운행대기는 무시
+    ignored = [
+        {**ARRIVALS[0], "ROUTE_CD": "30300001"},
+        {**ARRIVALS[0], "MSG_TP": "07"},
+    ]
+    assert commute.first_bus_eta(buses, ignored, ROUTE_CD) is None
+    assert buses[0]["eta_seconds"] is None
+    assert commute.leave_plan(buses, walk_seconds=0) is None
 
 
 def test_in_window():
@@ -208,8 +212,11 @@ async def test_commute_entities(hass):
         assert hass.states.get(f"sensor.{prefix}_first_stops").state == "3"
         assert hass.states.get(f"sensor.{prefix}_first_minutes").state == "5.0"
         first = hass.states.get(f"sensor.{prefix}_first_minutes").attributes
-        assert first["현재 정류장"] == "아이빌딩" and first["추정값"] is False
-        assert hass.states.get(f"sensor.{prefix}_second_stops").state == "9"
+        assert first["현재 정류장"] == "아이빌딩" and first["남은 거리(m)"] == 1464
+        second = hass.states.get(f"sensor.{prefix}_second_stops")
+        assert second.state == "9"
+        assert "도착예정시간" not in second.attributes  # 두 번째 버스는 정류장 수만
+        assert hass.states.get(f"sensor.{prefix}_second_minutes") is None
         # 첫 버스 5분 - 도보 4분 = 1분 -> 여유 1분 이하라 지금 출발
         assert hass.states.get(f"sensor.{prefix}_leave_in").state == "1.0"
         assert hass.states.get(f"binary_sensor.{prefix}_leave_now").state == "on"
@@ -250,8 +257,25 @@ async def test_commute_advice_when_bus_missed(hass):
     prefix = "daejeon_bus_commute_213_31770"
     assert hass.states.get(f"binary_sensor.{prefix}_leave_now").state == "off"
     advice = hass.states.get(f"sensor.{prefix}")
-    assert advice.attributes["탈 버스 순번"] == 2
-    assert advice.state.endswith("후 출발")
+    assert advice.state == "놓침 · 다음 버스 9정류장 전"
+    assert advice.attributes["지금 오는 버스 탈 수 있음"] is False
+    assert hass.states.get(f"sensor.{prefix}_leave_in").state == "unknown"
+
+
+async def test_commute_without_arrival_info(hass):
+    """도착정보가 없으면 정류장 수만 보여준다."""
+    entry = _entry()
+    entry.add_to_hass(hass)
+    p1, p2, p3 = _patch_api(arrivals=[])
+    with p1, p2, p3:
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    prefix = "daejeon_bus_commute_213_31770"
+    assert hass.states.get(f"sensor.{prefix}_first_stops").state == "3"
+    assert hass.states.get(f"sensor.{prefix}_first_minutes").state == "unknown"
+    assert hass.states.get(f"sensor.{prefix}").state == "3정류장 전"
+    assert hass.states.get(f"binary_sensor.{prefix}_leave_now").state == "off"
 
 
 async def test_auto_refresh_option(hass):

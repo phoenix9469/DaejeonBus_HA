@@ -35,8 +35,6 @@ CONF_LEAVE_MARGIN = "leave_margin"
 
 DEFAULT_WALK_MINUTES = 5
 DEFAULT_LEAVE_MARGIN = 1
-# 도착정보로 속도를 보정할 수 없을 때 쓰는 기본 버스 속도 (정차 포함 약 15km/h)
-DEFAULT_BUS_METERS_PER_MINUTE = 250
 ROUTE_STOPS_MAX_AGE_HOURS = 24
 
 # 자동 조회 (기본 꺼짐)

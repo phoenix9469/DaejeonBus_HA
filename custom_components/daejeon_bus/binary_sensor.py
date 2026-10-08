@@ -44,7 +44,6 @@ class CommuteLeaveNowBinarySensor(DaejeonBusEntity, BinarySensorEntity):
             return None
         bus = plan["bus"]
         return {
-            "탈 버스 순번": plan["index"] + 1,
             "차량번호": bus["plate"],
             "남은 정류장": bus["stops_away"],
             "출발까지(초)": plan["leave_in_seconds"],

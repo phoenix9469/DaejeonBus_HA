@@ -39,7 +39,6 @@ from .const import (
     DEFAULT_AUTO_INTERVAL,
     DEFAULT_AUTO_START,
     DEFAULT_AUTO_WEEKDAYS,
-    DEFAULT_BUS_METERS_PER_MINUTE,
     DEFAULT_LEAVE_MARGIN,
     DEFAULT_WALK_MINUTES,
     MIN_AUTO_INTERVAL,
@@ -348,24 +347,21 @@ class CommuteCoordinator(DaejeonBusBaseCoordinator):
                 f"노선 {self.route_no}에 {self.stop_seq}번째 정류소가 없습니다. 다시 설정하세요."
             )
 
-        # 도착정보는 실제 도착예정시간 보정용. 실패해도 위치 기반 추정으로 계속한다.
+        # 도착정보는 지금 오는 버스의 도착예정시간용. 실패해도 정류장 수는 보여준다.
         try:
             arrivals = await self.api.get_arrivals(self.station_id)
         except DaejeonBusError as err:
-            _LOGGER.debug("도착정보 조회 실패, 추정값 사용: %s", err)
+            _LOGGER.debug("도착정보 조회 실패, 도착예정시간 없이 표시: %s", err)
             arrivals = []
 
         buses = commute.approaching_buses(self._stops, my_stop, positions)
-        speed = commute.apply_eta(
-            buses, arrivals, self.route_cd, DEFAULT_BUS_METERS_PER_MINUTE
-        )
+        commute.first_bus_eta(buses, arrivals, self.route_cd)
         plan = commute.leave_plan(buses, self.walk_seconds)
 
         self.last_success_time = dt_util.now()
         return {
             "buses": buses,
             "plan": plan,
-            "speed_m_per_min": round(speed),
             "my_stop": my_stop,
             "running": len(positions),
         }

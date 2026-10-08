@@ -99,54 +99,44 @@ def approaching_buses(
     return buses
 
 
-def apply_eta(
-    buses: list[dict[str, Any]],
-    arrivals: list[dict[str, Any]],
-    route_cd: str,
-    default_meters_per_minute: float,
-) -> float:
-    """버스별 도착예정(초)을 채운다. 반환값은 사용한 속도(m/분).
+def first_bus_eta(
+    buses: list[dict[str, Any]], arrivals: list[dict[str, Any]], route_cd: str
+) -> int | None:
+    """지금 오는(첫 번째) 버스의 도착예정(초). 도착정보 API 값만 쓰고 추정하지 않는다.
 
-    도착정보 API에 같은 차량번호가 있으면 그 값을 쓰고(estimated=False),
-    없으면 남은 거리 / 속도로 추정한다. 속도는 실제 도착정보가 있는 버스로 보정한다.
+    같은 차량번호가 있으면 그 값, 없으면(두 API 갱신 시점 차이) 이 노선의 가장 빠른 도착정보.
+    결과는 buses[0]["eta_seconds"]에도 넣는다. 나머지 버스는 정류장 수만 보여준다.
     """
-    eta_by_plate: dict[str, int] = {}
+    for bus in buses:
+        bus["eta_seconds"] = None
+    if not buses:
+        return None
+
+    etas: list[tuple[int, str]] = []
     for item in arrivals:
         if _str(item.get("ROUTE_CD")) != _str(route_cd):
             continue
         if _str(item.get("MSG_TP")) == "07":  # 차고지 운행대기
             continue
         sec = _int(item.get("EXTIME_SEC"))
-        plate = _str(item.get("CAR_REG_NO"))
-        if plate and sec is not None:
-            eta_by_plate[plate] = sec
+        if sec is not None:
+            etas.append((sec, _str(item.get("CAR_REG_NO"))))
+    if not etas:
+        return None
 
-    samples = []
-    for bus in buses:
-        sec = eta_by_plate.get(bus["plate"])
-        bus["eta_seconds"] = sec
-        bus["estimated"] = sec is None
-        if sec and bus["meters_away"] > 0:
-            samples.append(bus["meters_away"] / (sec / 60))
-
-    speed = sum(samples) / len(samples) if samples else default_meters_per_minute
-    for bus in buses:
-        if bus["eta_seconds"] is None:
-            bus["eta_seconds"] = int(bus["meters_away"] / speed * 60) if speed > 0 else None
-    return speed
+    first = buses[0]
+    eta = next((sec for sec, plate in etas if plate and plate == first["plate"]), None)
+    if eta is None:
+        eta = min(sec for sec, _ in etas)
+    first["eta_seconds"] = eta
+    return eta
 
 
-def leave_plan(
-    buses: list[dict[str, Any]], walk_seconds: int
-) -> dict[str, Any] | None:
-    """걸어가서 탈 수 있는 첫 버스와 출발까지 남은 시간(초)."""
-    for index, bus in enumerate(buses):
-        eta = bus.get("eta_seconds")
-        if eta is None or eta < walk_seconds:
-            continue
-        return {
-            "index": index,
-            "bus": bus,
-            "leave_in_seconds": eta - walk_seconds,
-        }
-    return None
+def leave_plan(buses: list[dict[str, Any]], walk_seconds: int) -> dict[str, Any] | None:
+    """지금 오는 버스를 탈 수 있으면 출발까지 남은 시간(초). 못 타거나 도착정보가 없으면 None."""
+    if not buses:
+        return None
+    eta = buses[0].get("eta_seconds")
+    if eta is None or eta < walk_seconds:
+        return None
+    return {"index": 0, "bus": buses[0], "leave_in_seconds": eta - walk_seconds}

@@ -268,7 +268,7 @@ class DaejeonBusRouteSensor(DaejeonBusEntity, SensorEntity):
 # ---------------------------------------------------------------------------
 
 LEAVE_NOW = "지금 출발"
-NO_BUS = "탈 수 있는 버스 없음"
+NO_BUS = "오는 버스 없음"
 
 
 def _minutes(seconds: int | None) -> float | None:
@@ -276,17 +276,19 @@ def _minutes(seconds: int | None) -> float | None:
 
 
 def commute_bus_info(index: int, bus: dict[str, Any]) -> dict[str, Any]:
-    return {
+    """버스 1대 정보. 도착예정시간은 지금 오는(첫 번째) 버스에만 있다."""
+    info = {
         "순번": index + 1,
         "차량번호": bus["plate"],
         "남은 정류장": bus["stops_away"],
         "남은 거리(m)": bus["meters_away"],
-        "도착예정(분)": _minutes(bus.get("eta_seconds")),
-        "도착예정시간": format_seconds(bus.get("eta_seconds")),
-        "추정값": bus.get("estimated", True),
         "현재 정류장": bus["current_stop"],
         "현재 정류장 ID": bus["current_stop_id"],
     }
+    if bus.get("eta_seconds") is not None:
+        info["도착예정(분)"] = _minutes(bus["eta_seconds"])
+        info["도착예정시간"] = format_seconds(bus["eta_seconds"])
+    return info
 
 
 def _setup_commute(
@@ -295,9 +297,8 @@ def _setup_commute(
     async_add_entities(
         [
             CommuteStopsSensor(coordinator, 0),
-            CommuteMinutesSensor(coordinator, 0),
+            CommuteMinutesSensor(coordinator),
             CommuteStopsSensor(coordinator, 1),
-            CommuteMinutesSensor(coordinator, 1),
             CommuteLeaveInSensor(coordinator),
             CommuteAdviceSensor(coordinator),
             DaejeonBusLastUpdateSensor(coordinator),
@@ -348,7 +349,7 @@ class CommuteStopsSensor(CommuteEntity, SensorEntity):
 
 
 class CommuteMinutesSensor(CommuteEntity, SensorEntity):
-    """n번째로 오는 버스의 도착예정(분)."""
+    """지금 오는(첫 번째) 버스의 도착예정(분). 도착정보 API 값만 사용."""
 
     _attr_icon = "mdi:bus-clock"
     _attr_device_class = SensorDeviceClass.DURATION
@@ -356,25 +357,20 @@ class CommuteMinutesSensor(CommuteEntity, SensorEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_suggested_display_precision = 0
 
-    def __init__(self, coordinator: CommuteCoordinator, index: int) -> None:
+    def __init__(self, coordinator: CommuteCoordinator) -> None:
         super().__init__(coordinator)
-        self._index = index
-        self._set_ids("sensor", f"{_ORDINAL_KEY[index]}_minutes")
-        self._attr_name = f"{_ORDINAL[index]} 버스 도착예정"
+        self._set_ids("sensor", "first_minutes")
+        self._attr_name = "첫 번째 버스 도착예정"
 
     @property
     def native_value(self) -> float | None:
         buses = self._buses
-        if len(buses) <= self._index:
-            return None
-        return _minutes(buses[self._index].get("eta_seconds"))
+        return _minutes(buses[0].get("eta_seconds")) if buses else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         buses = self._buses
-        if len(buses) <= self._index:
-            return None
-        return commute_bus_info(self._index, buses[self._index])
+        return commute_bus_info(0, buses[0]) if buses else None
 
 
 class CommuteLeaveInSensor(CommuteEntity, SensorEntity):
@@ -419,13 +415,22 @@ class CommuteAdviceSensor(CommuteEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        plan = self._plan
-        if not plan:
+        buses = self._buses
+        if not buses:
             return NO_BUS
-        leave_in = plan["leave_in_seconds"]
-        if leave_in <= self.coordinator.leave_margin_seconds:
-            return LEAVE_NOW
-        return f"{format_seconds(leave_in)} 후 출발"
+        plan = self._plan
+        if plan:
+            leave_in = plan["leave_in_seconds"]
+            if leave_in <= self.coordinator.leave_margin_seconds:
+                return LEAVE_NOW
+            return f"{format_seconds(leave_in)} 후 출발"
+        if buses[0].get("eta_seconds") is None:
+            # 도착정보가 없으면 정류장 수만
+            return f"{buses[0]['stops_away']}정류장 전"
+        # 걸어가는 동안 지금 오는 버스가 먼저 도착
+        if len(buses) > 1:
+            return f"놓침 · 다음 버스 {buses[1]['stops_away']}정류장 전"
+        return "놓침"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -439,8 +444,7 @@ class CommuteAdviceSensor(CommuteEntity, SensorEntity):
             "내 정류장 ID(arsId)": self.coordinator.station_id,
             "내 정류장 순번": self.coordinator.stop_seq,
             "도보 시간(분)": _minutes(self.coordinator.walk_seconds),
-            "탈 버스 순번": plan["index"] + 1 if plan else None,
+            "지금 오는 버스 탈 수 있음": plan is not None,
             "운행 중인 버스 수": data.get("running"),
-            "추정 속도(m/분)": data.get("speed_m_per_min"),
             "버스 목록": [commute_bus_info(i, b) for i, b in enumerate(self._buses)],
         }
