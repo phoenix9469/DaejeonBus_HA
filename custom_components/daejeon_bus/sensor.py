@@ -15,6 +15,10 @@ from .const import (
     CONF_INCLUDE_BUSES,
     CONF_STATION_ID,
     DOMAIN,
+    LAST_CAT_NAMES,
+    MSG_TP_NAMES,
+    ROUTE_TP_NAMES,
+    STATUS_ARRIVED,
     STATUS_ENTERING,
     STATUS_WAITING,
 )
@@ -23,6 +27,7 @@ from .coordinator import (
     arrival_seconds,
     bus_status,
     format_seconds,
+    msg_type,
     parse_targets,
     sort_key,
     to_int,
@@ -37,9 +42,9 @@ def _route_unique_id(station_id: str, route_no: str) -> str:
 
 
 def arrival_text(item: dict[str, Any]) -> str | None:
-    """상태로 보여줄 문구: 진입중 / 운행대기 / 'N분 M초'."""
+    """상태로 보여줄 문구: 도착 / 진입중 / 운행대기 / 'N분 M초'."""
     status = bus_status(item)
-    if status in (STATUS_ENTERING, STATUS_WAITING):
+    if status in (STATUS_ARRIVED, STATUS_ENTERING, STATUS_WAITING):
         return status
     return format_seconds(arrival_seconds(item))
 
@@ -47,7 +52,14 @@ def arrival_text(item: dict[str, Any]) -> str | None:
 def bus_info(coordinator: DaejeonBusCoordinator, item: dict[str, Any]) -> dict[str, Any]:
     """버스 1대의 도착정보를 사용자용 속성으로 변환."""
     status = bus_status(item)
-    info: dict[str, Any] = {"운행 상태": status, "차량번호": item.get("CAR_REG_NO")}
+    tp = msg_type(item)
+    last_cat = str(item.get("LAST_CAT") or "").strip()
+    info: dict[str, Any] = {
+        "운행 상태": status,
+        "메시지 유형": MSG_TP_NAMES.get(tp, tp or None),
+        "첫/막차": LAST_CAT_NAMES.get(last_cat, last_cat or None),
+        "차량번호": item.get("CAR_REG_NO"),
+    }
     if status == STATUS_WAITING:
         # 운행대기(차고지 대기) 버스는 도착시간/위치 값이 의미 없다.
         info.update(
@@ -153,6 +165,9 @@ class DaejeonBusStationSensor(DaejeonBusEntity, SensorEntity):
             {
                 "노선": str(first.get("ROUTE_NO") or "").strip(),
                 "행선지": first.get("DESTINATION"),
+                "노선유형": ROUTE_TP_NAMES.get(
+                    str(first.get("ROUTE_TP") or "").strip()
+                ),
                 "도착예정": arrival_text(first),
                 **bus_info(self.coordinator, first),
             }
@@ -220,6 +235,8 @@ class DaejeonBusRouteSensor(DaejeonBusEntity, SensorEntity):
         first = items[0]
         attrs["노선 ID"] = first.get("ROUTE_CD")
         attrs["행선지"] = first.get("DESTINATION")
+        route_tp = str(first.get("ROUTE_TP") or "").strip()
+        attrs["노선유형"] = ROUTE_TP_NAMES.get(route_tp, route_tp or None)
         attrs.update(bus_info(self.coordinator, first))
         if len(items) > 1:
             attrs["다음 버스"] = [bus_info(self.coordinator, i) for i in items[1:]]

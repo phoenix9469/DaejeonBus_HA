@@ -10,7 +10,7 @@ import aiohttp
 import xmltodict
 from yarl import URL
 
-from .const import ARRIVE_URL
+from .const import ARRIVE_URL, STATION_URLS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -86,6 +86,7 @@ class DaejeonBusApi:
     def __init__(self, session: aiohttp.ClientSession, api_key: str) -> None:
         self._session = session
         self._key = _encode_key(api_key)
+        self._station_url: str | None = None
 
     async def _get(self, base: str, **params: str) -> list[dict[str, Any]]:
         query = "&".join(
@@ -110,3 +111,25 @@ class DaejeonBusApi:
         """정류소(arsId)의 버스 도착정보."""
         return await self._get(ARRIVE_URL, arsId=ars_id)
 
+
+    async def get_station_name(self, ars_id: str) -> str | None:
+        """정류소(arsId)의 이름(BUSSTOP_NM). 정류소정보 조회 서비스 사용.
+
+        사용 가능한 엔드포인트를 찾으면 기억해 두고, 어느 곳도 응답하지 않으면
+        DaejeonBusError를 발생시킨다.
+        """
+        urls = [self._station_url] if self._station_url else list(STATION_URLS)
+        last_err: DaejeonBusError | None = None
+        for url in urls:
+            try:
+                items = await self._get(url, arsId=ars_id)
+            except DaejeonBusError as err:
+                last_err = err
+                continue
+            self._station_url = url
+            for item in items:
+                name = str(item.get("BUSSTOP_NM") or "").strip()
+                if name:
+                    return name
+            return None
+        raise last_err or DaejeonBusError("정류소정보 조회 실패")

@@ -5,9 +5,8 @@
 """
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
-from pathlib import Path
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -22,26 +21,19 @@ from .api import DaejeonBusApi, DaejeonBusAuthError, DaejeonBusError
 from .const import (
     CONF_INCLUDE_BUSES,
     CONF_STATION_ID,
+    CONF_STOPS_CSV,
     DOMAIN,
+    MSG_TP_ARRIVED,
     MSG_TP_ENTERING,
     MSG_TP_WAITING,
+    STATUS_ARRIVED,
     STATUS_ENTERING,
     STATUS_RUNNING,
     STATUS_WAITING,
 )
+from .stops import load_stop_names
 
 _LOGGER = logging.getLogger(__name__)
-
-# 대전 정류소 arsId -> 정류소 이름 (국토교통부 전국 버스정류장 위치정보 기반)
-STOPS_FILE = Path(__file__).parent / "stops.json"
-
-
-def load_stop_names() -> dict[str, str]:
-    try:
-        return json.loads(STOPS_FILE.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as err:
-        _LOGGER.warning("정류소 이름 목록을 읽지 못했습니다: %s", err)
-        return {}
 
 
 def parse_targets(value: str | None) -> list[str]:
@@ -72,8 +64,10 @@ def msg_type(item: dict[str, Any]) -> str:
 
 
 def bus_status(item: dict[str, Any]) -> str:
-    """운행 상태: 진입중 / 운행대기 / 운행중."""
+    """운행 상태: 도착 / 진입중 / 운행대기 / 운행중."""
     tp = msg_type(item)
+    if tp == MSG_TP_ARRIVED:
+        return STATUS_ARRIVED
     if tp == MSG_TP_ENTERING:
         return STATUS_ENTERING
     if tp == MSG_TP_WAITING:
@@ -120,6 +114,9 @@ class DaejeonBusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.api = DaejeonBusApi(async_get_clientsession(hass), conf[CONF_API_KEY])
         self.last_success_time = None
         self.stop_names: dict[str, str] | None = None
+        # 정류소정보 API로도 이름을 못 찾은 arsId (재조회 방지)
+        self._unknown_stops: set[str] = set()
+        self._station_api_ok = True
         super().__init__(
             hass,
             _LOGGER,
@@ -142,7 +139,9 @@ class DaejeonBusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict[str, Any]:
         conf = self.conf
         if self.stop_names is None:
-            self.stop_names = await self.hass.async_add_executor_job(load_stop_names)
+            self.stop_names = await self.hass.async_add_executor_job(
+                load_stop_names, conf.get(CONF_STOPS_CSV)
+            )
         try:
             items = await self.api.get_arrivals(conf[CONF_STATION_ID])
         except DaejeonBusAuthError as err:
@@ -159,6 +158,8 @@ class DaejeonBusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 or str(i.get("ROUTE_CD", "")).strip() in targets
             ]
 
+        await self._async_resolve_stop_names(items)
+
         stop_name = next(
             (str(i["STOP_NAME"]).strip() for i in items if i.get("STOP_NAME")), None
         )
@@ -168,3 +169,41 @@ class DaejeonBusCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "routes": group_arrivals(items),
             "stop_name": stop_name,
         }
+
+    async def _async_resolve_stop_names(self, items: list[dict[str, Any]]) -> None:
+        """변환표에 없는 최근 통과 정류소는 정류소정보 API로 이름을 조회한다."""
+        if not self._station_api_ok:
+            return
+        names = self.stop_names if self.stop_names is not None else {}
+        missing = {
+            ars_id
+            for i in items
+            if (ars_id := str(i.get("LAST_STOP_ID") or "").strip())
+            and ars_id not in names
+            and ars_id not in self._unknown_stops
+        }
+        if not missing:
+            return
+
+        missing_list = sorted(missing)
+        results = await asyncio.gather(
+            *(self.api.get_station_name(a) for a in missing_list),
+            return_exceptions=True,
+        )
+        failures = 0
+        for ars_id, result in zip(missing_list, results):
+            if isinstance(result, str):
+                names[ars_id] = result
+            else:
+                self._unknown_stops.add(ars_id)
+                if isinstance(result, Exception):
+                    failures += 1
+                    _LOGGER.debug("정류소 %s 이름 조회 실패: %s", ars_id, result)
+        if failures == len(missing_list):
+            # 서비스키에 정류소정보 서비스 권한이 없는 경우 등: 이번 세션은 더 시도하지 않음
+            self._station_api_ok = False
+            _LOGGER.info(
+                "정류소정보 API로 정류소 이름을 조회할 수 없어 정류소 번호로 표시합니다. "
+                "공공데이터포털에서 '대전광역시_정류소정보조회' 서비스 활용신청 여부를 "
+                "확인하거나, 설정에서 정류소 CSV 파일을 지정하세요."
+            )
