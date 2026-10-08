@@ -29,7 +29,7 @@ async def test_setup_and_refresh(hass):
         lookup.assert_not_called()  # 내장 목록에 있는 정류소는 API 호출 안 함
 
         state = hass.states.get("sensor.daejeon_bus_31770_3")
-        assert state.state == "곧 도착"  # 기본 기준 3분 이하
+        assert state.state == "곧 도착 (1정류장 전)"  # 기본 기준 3분 이하
         assert state.attributes["운행 상태"] == "곧 도착"
         assert state.attributes["도착예정시간"] == "48초"
         assert state.attributes["잔여 정류장 수"] == 1
@@ -37,7 +37,7 @@ async def test_setup_and_refresh(hass):
         assert state.attributes["최근 통과 정류소 ID"] == "31910"
 
         state = hass.states.get("sensor.daejeon_bus_31770_103")
-        assert state.state == "5분 7초"
+        assert state.state == "5분 7초 (4정류장 전)"
         assert state.attributes["운행 상태"] == "운행중"
         assert hass.states.get("sensor.daejeon_bus_31770").state == "2"
         assert hass.states.get("sensor.daejeon_bus_31770_116") is None
@@ -154,9 +154,9 @@ async def test_soon_threshold_option(hass):
     with patch.object(DaejeonBusApi, "get_arrivals", return_value=ITEMS[:2]):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-        assert hass.states.get("sensor.daejeon_bus_31770_3").state == "48초"
+        assert hass.states.get("sensor.daejeon_bus_31770_3").state == "48초 (1정류장 전)"
 
         hass.config_entries.async_update_entry(entry, options={"soon_minutes": 6})
         await hass.async_block_till_done()  # 옵션 변경 시 다시 로드
-        assert hass.states.get("sensor.daejeon_bus_31770_3").state == "곧 도착"
-        assert hass.states.get("sensor.daejeon_bus_31770_103").state == "곧 도착"
+        assert hass.states.get("sensor.daejeon_bus_31770_3").state == "곧 도착 (1정류장 전)"
+        assert hass.states.get("sensor.daejeon_bus_31770_103").state == "곧 도착 (4정류장 전)"

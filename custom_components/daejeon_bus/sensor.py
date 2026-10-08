@@ -43,11 +43,18 @@ def _route_unique_id(station_id: str, route_no: str) -> str:
 
 
 def arrival_text(coordinator: DaejeonBusCoordinator, item: dict[str, Any]) -> str | None:
-    """상태로 보여줄 문구: 도착 / 진입중 / 곧 도착 / 운행대기 / 'N분 M초'."""
+    """상태로 보여줄 문구.
+
+    도착 / 진입중 / 운행대기, 또는 '곧 도착 (1정류장 전)', '5분 7초 (4정류장 전)'.
+    """
     status = bus_status(item, coordinator.soon_seconds)
-    if status in (STATUS_ARRIVED, STATUS_ENTERING, STATUS_SOON, STATUS_WAITING):
+    if status in (STATUS_ARRIVED, STATUS_ENTERING, STATUS_WAITING):
         return status
-    return format_seconds(arrival_seconds(item))
+    text = status if status == STATUS_SOON else format_seconds(arrival_seconds(item))
+    stops = to_int(item.get("STATUS_POS"))
+    if text and stops:
+        return f"{text} ({stops}정류장 전)"
+    return text
 
 
 def bus_info(coordinator: DaejeonBusCoordinator, item: dict[str, Any]) -> dict[str, Any]:
