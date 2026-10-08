@@ -21,13 +21,23 @@ ID_COLUMNS = (
     "모바일단축번호",  # 국토교통부 전국 버스정류장 위치정보
     "BUS_STOP_ID",  # 대전 BIS 노선별 경유 정류소
     "ARO_BUSSTOP_ID",  # 대전 BIS 정류소정보
+    "관리번호",  # 대전광역시 시내버스 정류장 현황
     "arsId",
     "ARS_ID",
     "ARS번호",
     "정류소번호",
     "정류장번호",
 )
-NAME_COLUMNS = ("정류장명", "정류소명", "BUSSTOP_NM", "STOP_NAME", "정류소명칭", "name")
+NAME_COLUMNS = (
+    "정류장명",
+    "정류장이름",  # 대전광역시 시내버스 정류장 현황 ('정류장 이름')
+    "정류소명",
+    "정류소이름",
+    "BUSSTOP_NM",
+    "STOP_NAME",
+    "정류소명칭",
+    "name",
+)
 CITY_CODE_COLUMN = "도시코드"
 DAEJEON_CITY_CODE = "25"
 
@@ -49,17 +59,25 @@ def _decode(raw: bytes) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
+def _norm(name: str) -> str:
+    """헤더 비교용: 공백 제거 + 소문자."""
+    return "".join(name.split()).lower()
+
+
 def _pick(header: list[str], candidates: tuple[str, ...]) -> str | None:
-    normalized = {h.strip().lower(): h for h in header}
+    normalized = {_norm(h): h for h in header}
     for cand in candidates:
-        if cand.lower() in normalized:
-            return normalized[cand.lower()]
+        if _norm(cand) in normalized:
+            return normalized[_norm(cand)]
     return None
 
 
 def parse_csv(text: str) -> dict[str, str]:
     """CSV 텍스트에서 arsId -> 이름 표를 만든다. 열 이름은 자동 인식."""
-    reader = csv.DictReader(io.StringIO(text))
+    first_line = text.split("\n", 1)[0]
+    # 엑셀에서 복사/저장한 탭 구분 파일도 허용
+    delimiter = "\t" if first_line.count("\t") > first_line.count(",") else ","
+    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
     header = reader.fieldnames or []
     id_col = _pick(header, ID_COLUMNS)
     name_col = _pick(header, NAME_COLUMNS)

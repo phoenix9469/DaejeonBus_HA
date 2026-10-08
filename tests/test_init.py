@@ -122,3 +122,17 @@ def test_parse_bis_csv():
 
     text = "BUSSTOP_NM,BUS_STOP_ID,GPS_LATI\n대전광역시청,32350,36.35\n"
     assert parse_csv(text) == {"32350": "대전광역시청"}
+
+
+def test_parse_daejeon_stop_status_csv():
+    """대전광역시 시내버스 정류장 현황 형식 (관리번호 = arsId)."""
+    from custom_components.daejeon_bus.stops import parse_csv
+
+    text = (
+        "관리번호,정류장 이름,시군구명,읍면동명,지번\n"
+        "10010,대전역/중앙시장,동구,원동,51-1\n"
+        "10020,원동네거리,동구,원동,85-28\n"
+    )
+    expected = {"10010": "대전역/중앙시장", "10020": "원동네거리"}
+    assert parse_csv(text) == expected
+    assert parse_csv(text.replace(",", "\t")) == expected
