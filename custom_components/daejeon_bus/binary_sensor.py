@@ -1,4 +1,4 @@
-"""대전 버스 바이너리 센서 (출근 알리미: 지금 나가야 하는지)."""
+"""대전 버스 바이너리 센서 (노선으로 조회: 지금 나가야 하는지)."""
 from __future__ import annotations
 
 from typing import Any

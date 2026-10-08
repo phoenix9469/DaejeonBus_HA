@@ -1,4 +1,4 @@
-"""출근 알리미 테스트 (213번 노선 실제 응답 사용)."""
+"""노선으로 조회 테스트 (213번 노선 실제 응답 사용)."""
 from datetime import datetime, time, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -124,7 +124,7 @@ async def test_commute_config_flow(hass):
             result["flow_id"], {"walk_minutes": 4, "leave_margin": 1}
         )
     assert result["type"] == "create_entry"
-    assert result["title"] == "213번 → 갈마네거리 출근"
+    assert result["title"] == "213번 → 갈마네거리"
     assert result["data"] == {
         "entry_type": "commute",
         "api_key": "k",

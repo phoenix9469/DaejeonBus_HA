@@ -264,7 +264,7 @@ class DaejeonBusRouteSensor(DaejeonBusEntity, SensorEntity):
 
 
 # ---------------------------------------------------------------------------
-# 출근 알리미
+# 노선으로 조회
 # ---------------------------------------------------------------------------
 
 LEAVE_NOW = "지금 출발"
@@ -415,7 +415,7 @@ class CommuteAdviceSensor(CommuteEntity, SensorEntity):
     def __init__(self, coordinator: CommuteCoordinator) -> None:
         super().__init__(coordinator)
         self._set_ids("sensor", None)
-        self._attr_name = "출근 안내"
+        self._attr_name = "출발 안내"
 
     @property
     def native_value(self) -> str:

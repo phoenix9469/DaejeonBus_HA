@@ -98,7 +98,7 @@ def _auto_refresh_schema(conf: dict[str, Any]) -> dict:
 
 
 class DaejeonBusConfigFlow(ConfigFlow, domain=DOMAIN):
-    """정류소 도착정보 / 출근 알리미."""
+    """정류장 도착정보 / 노선으로 조회."""
 
     VERSION = 1
 
@@ -157,7 +157,7 @@ class DaejeonBusConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    # ---- 출근 알리미 ----
+    # ---- 노선으로 조회 ----
 
     def _api(self) -> DaejeonBusApi:
         return DaejeonBusApi(async_get_clientsession(self.hass), self._data[CONF_API_KEY])
@@ -289,7 +289,7 @@ class DaejeonBusConfigFlow(ConfigFlow, domain=DOMAIN):
             stop = commute.stop_by_seq(self._stops, self._data[CONF_STOP_SEQ])
             stop_name = stop.name if stop else self._data[CONF_STATION_ID]
             return self.async_create_entry(
-                title=f"{self._data[CONF_ROUTE_NO]}번 → {stop_name} 출근",
+                title=f"{self._data[CONF_ROUTE_NO]}번 → {stop_name}",
                 data=self._data,
             )
 

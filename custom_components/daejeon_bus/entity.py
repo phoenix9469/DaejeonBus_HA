@@ -9,7 +9,7 @@ from .coordinator import DaejeonBusBaseCoordinator
 
 
 class DaejeonBusEntity(CoordinatorEntity[DaejeonBusBaseCoordinator]):
-    """항목(정류소 또는 출근 알리미) 단위 기기에 묶이는 엔티티."""
+    """항목(정류소 또는 노선으로 조회) 단위 기기에 묶이는 엔티티."""
 
     _attr_has_entity_name = True
 

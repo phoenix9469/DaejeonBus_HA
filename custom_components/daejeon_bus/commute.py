@@ -1,4 +1,4 @@
-"""출근 알리미 계산 (Home Assistant와 무관한 순수 함수).
+"""노선으로 조회 계산 (Home Assistant와 무관한 순수 함수).
 
 - 노선 경유 정류소 목록(getStaionByRoute): 정류소 순번(BUSSTOP_SEQ)과 기점부터 누적거리(TOTAL_DIST)
 - 노선 버스 위치(getBusPosByRtid): 버스별 기점부터 누적거리(TOTAL_DIST), 차량번호(PLATE_NO)

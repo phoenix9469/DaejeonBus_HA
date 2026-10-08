@@ -17,7 +17,7 @@ STATION_URLS = (
 # 항목 유형
 CONF_ENTRY_TYPE = "entry_type"
 ENTRY_TYPE_STATION = "station"  # 정류소 도착정보
-ENTRY_TYPE_COMMUTE = "commute"  # 출근 알리미 (노선 + 내 정류장)
+ENTRY_TYPE_COMMUTE = "commute"  # 노선으로 조회 (노선 + 내 정류장)
 
 CONF_STATION_ID = "station_id"
 CONF_STATION_NAME = "station_name"
@@ -26,7 +26,7 @@ CONF_SOON_MINUTES = "soon_minutes"
 
 DEFAULT_SOON_MINUTES = 3
 
-# 출근 알리미
+# 노선으로 조회
 CONF_ROUTE_CD = "route_cd"
 CONF_ROUTE_NO = "route_no"
 CONF_STOP_SEQ = "stop_seq"

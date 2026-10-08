@@ -206,7 +206,7 @@ class DaejeonBusBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 class DaejeonBusCoordinator(DaejeonBusBaseCoordinator):
     """정류소(arsId)의 버스 도착정보를 조회한다."""
 
-    device_model = "정류소 버스도착정보"
+    device_model = "정류장 도착정보"
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         conf = {**entry.data, **entry.options}
@@ -274,9 +274,9 @@ StationCoordinator = DaejeonBusCoordinator
 
 
 class CommuteCoordinator(DaejeonBusBaseCoordinator):
-    """출근 알리미: 노선의 모든 버스가 내 정류장에서 몇 정류장/몇 분 전인지."""
+    """노선으로 조회: 노선의 모든 버스가 내 정류장에서 몇 정류장/몇 분 전인지."""
 
-    device_model = "출근 알리미 (노선 추적)"
+    device_model = "노선으로 조회"
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         conf = {**entry.data, **entry.options}
@@ -298,7 +298,7 @@ class CommuteCoordinator(DaejeonBusBaseCoordinator):
     def device_name(self) -> str:
         stop = self.my_stop
         stop_name = stop.name if stop else self.station_id
-        return f"{self.route_no}번 → {stop_name} 출근"
+        return f"{self.route_no}번 → {stop_name}"
 
     def _minutes(self, key: str, default: float) -> float:
         try:
