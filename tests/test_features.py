@@ -225,3 +225,40 @@ async def test_reset_route_entities(hass):
         await hass.async_block_till_done()
         assert result == {"removed_entities": {entry.title: 2}}
         assert hass.states.get("sensor.daejeon_bus_31770_3") is not None
+
+
+# ---- 정렬 ----
+
+
+def test_route_number_key():
+    from custom_components.daejeon_bus.coordinator import route_number_key
+
+    routes = ["119", "급행2", "3", "103", "마을1", "101", "급행1", "1001"]
+    assert sorted(routes, key=route_number_key) == [
+        "3", "101", "103", "119", "1001", "급행1", "급행2", "마을1",
+    ]
+
+
+async def test_station_bus_list_sorted_by_route_number(hass):
+    """정류장 도착정보 버스 목록은 도착 순이 아니라 노선번호순."""
+    def item(no, sec, tp="03"):
+        return {**ITEMS[0], "ROUTE_NO": no, "ROUTE_CD": f"303{no}", "EXTIME_SEC": str(sec),
+                "MSG_TP": tp, "LAST_STOP_ID": None}
+
+    items = [item("119", 130), item("급행2", 60), item("3", 900), item("103", 307),
+             item("101", 50, tp="07"), item("3", 100)]
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"entry_type": "station", "api_key": "k", "station_id": "31770"},
+        unique_id="31770",
+    )
+    entry.add_to_hass(hass)
+    with patch.object(DaejeonBusApi, "get_arrivals", return_value=items):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    buses = hass.states.get("sensor.daejeon_bus_31770").attributes["버스 목록"]
+    assert [b["노선"] for b in buses] == ["3", "101", "103", "119", "급행2"]
+    # 같은 노선은 도착 빠른 버스가 첫 차, 운행대기도 번호 자리에 그대로
+    assert buses[0]["도착예정시간"] == "1분 40초"
+    assert buses[1]["운행 상태"] == "운행대기"

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, time, timedelta
 import logging
+import re
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -120,6 +121,16 @@ def format_seconds(sec: int | None) -> str | None:
         return f"{sec}초"
     minutes, seconds = divmod(sec, 60)
     return f"{minutes}분 {seconds}초"
+
+
+def route_number_key(route_no: Any) -> tuple:
+    """노선번호 정렬 키: 숫자 노선은 숫자 크기순(3 < 103 < 119), 그 뒤에 문자 노선(급행1, 마을2 …)."""
+    text = str(route_no or "").strip()
+    match = re.match(r"^(\D*)(\d+)(.*)$", text)
+    if not match:
+        return (2, text, 0, "")
+    prefix, number, rest = match.groups()
+    return (1 if prefix else 0, prefix, int(number), rest)
 
 
 def group_arrivals(items: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:

@@ -40,7 +40,7 @@ from .coordinator import (
     format_seconds,
     msg_type,
     parse_targets,
-    sort_key,
+    route_number_key,
     to_int,
 )
 from .entity import DaejeonBusEntity
@@ -151,7 +151,7 @@ async def async_setup_entry(
             new.append(DaejeonBusRouteSensor(coordinator, route_no))
         return new
 
-    entities.extend(_new_route_sensors(route_nos))
+    entities.extend(_new_route_sensors(sorted(set(route_nos), key=route_number_key)))
     async_add_entities(entities)
 
     if targets:
@@ -161,7 +161,7 @@ async def async_setup_entry(
     @callback
     def _async_add_new_routes() -> None:
         routes = (coordinator.data or {}).get("routes", {})
-        if new := _new_route_sensors(list(routes)):
+        if new := _new_route_sensors(sorted(routes, key=route_number_key)):
             async_add_entities(new)
 
     entry.async_on_unload(coordinator.async_add_listener(_async_add_new_routes))
@@ -187,8 +187,10 @@ class DaejeonBusStationSensor(DaejeonBusEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         data = self.coordinator.data or {}
+        # 노선번호순 (같은 노선 안에서는 도착 빠른 버스가 첫 차)
         firsts = sorted(
-            (items[0] for items in data.get("routes", {}).values()), key=sort_key
+            (items[0] for items in data.get("routes", {}).values()),
+            key=lambda item: route_number_key(item.get("ROUTE_NO")),
         )
         buses = [
             {
