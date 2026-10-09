@@ -396,32 +396,45 @@ class CommuteCoordinator(DaejeonBusBaseCoordinator):
             raise DaejeonBusError(f"노선 {self.route_cd}의 정류소 목록이 비어 있습니다")
         self._stops = stops
         self._stops_fetched = now
+        self._quota_ok(API_ROUTE)
         # 노선 경유 정류소 이름도 공용 캐시 파일에 저장
         cache = get_stop_cache(self.hass)
         await cache.async_load()
         cache.async_add({s.ars_id: s.name for s in stops if s.name})
 
     async def _async_update_data(self) -> dict[str, Any]:
+        # 1) 노선 정류장 목록 (하루 1번, 캐시)
         try:
             await self._async_ensure_stops()
-            positions = await self.api.get_bus_positions(self.route_cd)
         except DaejeonBusQuotaError as err:
-            # 한도 초과: 마지막 정보를 그대로 두고 표시만 한다
-            self._quota_hit(err)
-            return self.data or {"buses": [], "my_stop": self.my_stop, "running": None}
+            self._quota_hit(err, API_ROUTE)  # 캐시가 있으면 그대로 사용
         except DaejeonBusAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except DaejeonBusError as err:
-            raise UpdateFailed(str(err)) from err
-        self._quota_ok(API_BUSPOS, API_ROUTE)
+            if not self._stops:
+                raise UpdateFailed(str(err)) from err
+            _LOGGER.debug("노선 정류장 목록 갱신 실패, 이전 목록 사용: %s", err)
+
+        # 2) 노선 버스 위치 (정류장 목록이 있어야 계산 가능)
+        positions: list[dict[str, Any]] | None = None
+        if self._stops:
+            try:
+                positions = await self.api.get_bus_positions(self.route_cd)
+                self._quota_ok(API_BUSPOS)
+            except DaejeonBusQuotaError as err:
+                self._quota_hit(err, API_BUSPOS)
+            except DaejeonBusAuthError as err:
+                raise ConfigEntryAuthFailed(str(err)) from err
+            except DaejeonBusError as err:
+                raise UpdateFailed(str(err)) from err
 
         my_stop = self.my_stop
-        if my_stop is None:
+        if self._stops and my_stop is None:
             raise UpdateFailed(
                 f"노선 {self.route_no}에 {self.stop_seq}번째 정류소가 없습니다. 다시 설정하세요."
             )
 
-        # 도착정보는 지금 오는 버스의 도착예정시간용. 실패해도 정류장 수는 보여준다.
+        # 3) 내 정류장 도착정보: 지금 오는 버스의 도착예정시간 (위치 API가 막히면 대체 자료)
         try:
             arrivals = await self.api.get_arrivals(self.station_id)
             self._quota_ok(API_ARRIVE)
@@ -431,13 +444,32 @@ class CommuteCoordinator(DaejeonBusBaseCoordinator):
         except DaejeonBusError as err:
             _LOGGER.debug("도착정보 조회 실패, 도착예정시간 없이 표시: %s", err)
             arrivals = []
+        stop_name = next(
+            (str(i["STOP_NAME"]).strip() for i in arrivals if i.get("STOP_NAME")), None
+        )
 
-        buses = commute.approaching_buses(self._stops, my_stop, positions)
-        commute.first_bus_eta(buses, arrivals, self.route_cd)
+        if positions is not None:
+            buses = commute.approaching_buses(self._stops, my_stop, positions)
+            commute.first_bus_eta(buses, arrivals, self.route_cd)
+            source, running = API_BUSPOS, len(positions)
+        else:
+            # 버스 위치(또는 노선 정류장) API를 못 씀: 도착정보로 지금 오는 버스만 보여준다
+            buses = commute.buses_from_arrivals(
+                arrivals, self.route_cd, get_stop_cache(self.hass).get
+            )
+            if not buses and not arrivals:
+                # 도착정보도 없음: 마지막 정보 유지
+                return self.data or {
+                    "buses": [], "my_stop": my_stop, "running": None,
+                    "source": None, "stop_name": stop_name,
+                }
+            source, running = API_ARRIVE, None
 
         self.last_success_time = dt_util.now()
         return {
             "buses": buses,
             "my_stop": my_stop,
-            "running": len(positions),
+            "running": running,
+            "source": source,
+            "stop_name": stop_name,
         }

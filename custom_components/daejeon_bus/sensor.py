@@ -16,6 +16,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import slugify
 
 from .const import (
+    API_ARRIVE,
+    API_BUSPOS,
     API_NAMES,
     CONF_ENTRY_TYPE,
     DEV_DAILY_LIMIT,
@@ -447,7 +449,12 @@ class CommuteSummarySensor(CommuteEntity, SensorEntity):
         return {
             "노선번호": self.coordinator.route_no,
             "노선 ID": self.coordinator.route_cd,
-            "내 정류장": my_stop.name if my_stop else None,
+            "내 정류장": my_stop.name if my_stop else data.get("stop_name"),
+            # 버스위치 API를 못 쓰면 도착정보로 지금 오는 버스만 보여준다 (남은 거리 없음)
+            "데이터 출처": {
+                API_BUSPOS: "버스위치",
+                API_ARRIVE: "도착정보 (버스위치 대신)",
+            }.get(data.get("source")),
             "내 정류장 ID(arsId)": self.coordinator.station_id,
             "내 정류장 순번": self.coordinator.stop_seq,
             "운행 중인 버스 수": data.get("running"),

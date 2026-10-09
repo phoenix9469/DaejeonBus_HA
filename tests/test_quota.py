@@ -32,6 +32,12 @@ QUOTA_XML = """<?xml version="1.0" encoding="UTF-8"?>
 </OpenAPI_ServiceResponse>"""
 
 
+# 도착정보 API의 213번 항목 (STATUS_POS = 남은 정류장, LAST_STOP_ID = 최근 통과 정류장)
+ARRIVALS_WITH_POS = [
+    {**ARRIVALS[0], "STATUS_POS": "4", "LAST_STOP_ID": "32310", "EXTIME_SEC": "329"}
+]
+
+
 def quota(service="arrive"):
     return DaejeonBusQuotaError("일일 요청 한도 초과 (HTTP 429)", service)
 
@@ -195,12 +201,31 @@ async def test_commute_quota(hass):
         await hass.async_block_till_done()
     assert hass.states.get(f"binary_sensor.{prefix}_api_quota").state == "off"
 
-    # 버스 위치 한도 초과: 마지막 정보 유지
-    with patch.object(DaejeonBusApi, "get_bus_positions", side_effect=quota("busposinfo")):
+    # 버스 위치 한도 초과: 도착정보로 지금 오는 버스를 보여줌 (남은 거리 없음)
+    with (
+        patch.object(DaejeonBusApi, "get_bus_positions", side_effect=quota("busposinfo")),
+        patch.object(DaejeonBusApi, "get_arrivals", return_value=ARRIVALS_WITH_POS),
+    ):
         await _press(hass, f"button.{prefix}_refresh")
-    assert hass.states.get(f"sensor.{prefix}_first_stops").state == "3"
+    first = hass.states.get(f"sensor.{prefix}_first_stops")
+    assert first.state == "4"
+    assert first.attributes["현재 정류장"] == "시청.교육청"  # 노선 정류장 캐시에서 이름
+    assert first.attributes["남은 거리(m)"] is None
+    assert hass.states.get(f"sensor.{prefix}_first_minutes").state == "5분 29초"
+    summary = hass.states.get(f"sensor.{prefix}")
+    assert summary.attributes["데이터 출처"] == "도착정보 (버스위치 대신)"
     q = hass.states.get(f"binary_sensor.{prefix}_api_quota")
     assert q.state == "on" and q.attributes["초과된 API"] == ["버스위치 (busposinfo)"]
+
+    # 버스 위치·도착정보 둘 다 한도 초과: 마지막 정보 유지
+    with (
+        patch.object(DaejeonBusApi, "get_bus_positions", side_effect=quota("busposinfo")),
+        patch.object(DaejeonBusApi, "get_arrivals", side_effect=quota("arrive")),
+    ):
+        await _press(hass, f"button.{prefix}_refresh")
+    assert hass.states.get(f"sensor.{prefix}_first_stops").state == "4"
+    q = hass.states.get(f"binary_sensor.{prefix}_api_quota")
+    assert sorted(q.attributes["초과된 API"]) == ["도착정보 (arrive)", "버스위치 (busposinfo)"]
 
     # 위치는 되는데 도착정보만 한도 초과: 정류장 수는 보이고 도착예정시간은 없음
     with (
@@ -212,3 +237,23 @@ async def test_commute_quota(hass):
     assert hass.states.get(f"sensor.{prefix}_first_minutes").state == "unknown"
     q = hass.states.get(f"binary_sensor.{prefix}_api_quota")
     assert q.attributes["초과된 API"] == ["도착정보 (arrive)"]
+    assert hass.states.get(f"sensor.{prefix}").attributes["데이터 출처"] == "버스위치"
+
+
+async def test_commute_starts_while_route_api_blocked(hass):
+    """노선 정류장 목록조차 못 받는 상태로 시작해도 도착정보로 보여준다."""
+    entry = _commute_entry()
+    entry.add_to_hass(hass)
+    prefix = "daejeon_bus_commute_213_31770"
+    with (
+        patch.object(DaejeonBusApi, "get_route_stops", side_effect=quota("busRouteInfo")),
+        patch.object(DaejeonBusApi, "get_bus_positions", side_effect=AssertionError("호출 안 함")),
+        patch.object(DaejeonBusApi, "get_arrivals", return_value=ARRIVALS_WITH_POS),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    assert hass.states.get(f"sensor.{prefix}_first_stops").state == "4"
+    summary = hass.states.get(f"sensor.{prefix}")
+    assert summary.attributes["내 정류장"] == "갈마네거리"  # 도착정보의 STOP_NAME
+    assert summary.attributes["데이터 출처"] == "도착정보 (버스위치 대신)"
+    assert hass.states.get(f"binary_sensor.{prefix}_api_quota").state == "on"

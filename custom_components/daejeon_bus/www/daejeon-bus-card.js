@@ -239,23 +239,26 @@ class DaejeonBusCard extends HTMLElement {
     const scale = this._config.scale_stops || 30;
     const rows = buses.slice(0, this._config.max_rows).map((b, i) => {
       const stops = b["남은 정류장"];
-      const km = (b["남은 거리(m)"] / 1000).toFixed(1);
+      const meters = b["남은 거리(m)"];
+      const km = meters != null ? ` <span class="km">(${(meters / 1000).toFixed(1)}km)</span>` : "";
       // 가까울수록 막대가 길어짐 (내 정류장 = 오른쪽 끝)
       const pct = Math.max(6, Math.round(100 - (Math.min(stops, scale) / scale) * 100));
       const color = i === 0 ? (stops <= 3 ? "var(--error-color, #db4437)" : "var(--primary-color)") : "var(--secondary-text-color)";
       const eta = b["도착예정시간"] ? `<span style="font-weight:600;color:${color}">${esc(b["도착예정시간"])}</span>` : "";
       return `
         <div class="bus">
-          <div class="bus-top"><span><b>${i + 1}번째 · ${esc(stops)}정류장 전</b> <span class="km">(${km}km)</span></span>${eta}</div>
+          <div class="bus-top"><span><b>${i + 1}번째 · ${esc(stops)}정류장 전</b>${km}</span>${eta}</div>
           <div class="track">
             <div class="fill" style="width:${pct}%;background:${color};opacity:${i === 0 ? 1 : 0.55}"></div>
             <ha-icon icon="mdi:bus-side" style="left:calc(${pct}% - 13px);color:${color}"></ha-icon>
           </div>
-          <div class="sub">현재 ${esc(b["현재 정류장"])} · ${esc(b["차량번호"])}</div>
+          <div class="sub">${esc([b["현재 정류장"] ? `현재 ${b["현재 정류장"]}` : "", b["차량번호"]].filter(Boolean).join(" · "))}</div>
         </div>`;
     });
     const more = buses.length > this._config.max_rows ? `<div class="more">외 ${buses.length - this._config.max_rows}대</div>` : "";
-    return header + `<div class="list">${rows.join("")}${more}</div>`;
+    const note = (a["데이터 출처"] || "").startsWith("도착정보")
+      ? `<div class="more">버스위치를 받을 수 없어 도착정보로 지금 오는 버스만 표시합니다 (남은 거리 없음)</div>` : "";
+    return header + `<div class="list">${rows.join("")}${more}${note}</div>`;
   }
 }
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 
 def _int(value: Any) -> int | None:
@@ -130,3 +130,38 @@ def first_bus_eta(
         eta = min(sec for sec, _ in etas)
     first["eta_seconds"] = eta
     return eta
+
+
+def buses_from_arrivals(
+    arrivals: list[dict[str, Any]],
+    route_cd: str,
+    stop_name: Callable[[str], str | None],
+) -> list[dict[str, Any]]:
+    """버스 위치 API를 못 쓸 때 대체: 도착정보 API로 이 노선 버스 목록을 만든다.
+
+    도착정보에는 버스까지 남은 거리가 없으므로 meters_away 는 None.
+    남은 정류장(STATUS_POS)과 도착예정(EXTIME_SEC)은 실제 값이다.
+    """
+    buses = []
+    for item in arrivals:
+        if _str(item.get("ROUTE_CD")) != _str(route_cd):
+            continue
+        if _str(item.get("MSG_TP")) == "07":  # 차고지 운행대기
+            continue
+        stops_away = _int(item.get("STATUS_POS"))
+        if stops_away is None:
+            continue
+        last_stop = _str(item.get("LAST_STOP_ID"))
+        buses.append(
+            {
+                "plate": _str(item.get("CAR_REG_NO")),
+                "stops_away": stops_away,
+                "meters_away": None,
+                "current_stop": stop_name(last_stop) or last_stop or None,
+                "current_stop_id": last_stop or None,
+                "current_seq": None,
+                "eta_seconds": _int(item.get("EXTIME_SEC")),
+            }
+        )
+    buses.sort(key=lambda b: (b["stops_away"], b["eta_seconds"] or 0))
+    return buses
