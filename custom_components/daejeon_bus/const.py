@@ -38,7 +38,7 @@ DEFAULT_AUTO_START = "07:00:00"
 DEFAULT_AUTO_END = "09:00:00"
 DEFAULT_AUTO_WEEKDAYS = ["mon", "tue", "wed", "thu", "fri"]
 DEFAULT_AUTO_INTERVAL = 60
-MIN_AUTO_INTERVAL = 30
+MIN_AUTO_INTERVAL = 5
 WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 WEEKDAY_NAMES = {"mon": "월", "tue": "화", "wed": "수", "thu": "목", "fri": "금", "sat": "토", "sun": "일"}
 

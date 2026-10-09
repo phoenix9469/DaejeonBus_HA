@@ -87,7 +87,7 @@ def _auto_refresh_schema(conf: dict[str, Any]) -> dict:
             selector.NumberSelectorConfig(
                 min=MIN_AUTO_INTERVAL,
                 max=600,
-                step=10,
+                step=5,
                 unit_of_measurement="초",
                 mode=selector.NumberSelectorMode.BOX,
             )

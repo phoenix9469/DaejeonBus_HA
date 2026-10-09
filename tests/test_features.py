@@ -264,3 +264,14 @@ async def test_station_bus_list_sorted_by_route_number(hass):
     # 같은 노선은 도착 빠른 버스가 첫 차, 운행대기도 번호 자리에 그대로
     assert buses[0]["도착예정시간"] == "1분 40초"
     assert buses[1]["운행 상태"] == "운행대기"
+
+
+def test_estimate_min_interval_5_seconds():
+    conf = {"auto_refresh": True, "auto_start": "07:00:00", "auto_end": "09:00:00",
+            "auto_weekdays": ["mon"], "auto_interval": 5}
+    est = estimate_auto_calls(conf, *COMMUTE)
+    assert est["interval"] == 5
+    assert est["per_day"] == {"busposinfo": 1441, "arrive": 1441, "busRouteInfo": 1}
+    assert "⚠️" in format_estimate(est)
+    # 5초보다 짧게 넣어도 5초로 계산
+    assert estimate_auto_calls({**conf, "auto_interval": 1}, *COMMUTE)["interval"] == 5
