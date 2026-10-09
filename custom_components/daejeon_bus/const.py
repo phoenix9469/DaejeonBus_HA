@@ -52,7 +52,7 @@ API_NAMES = {
     API_ROUTE: "노선정류장 (busRouteInfo)",
 }
 # 공공데이터포털 개발계정 기본 일일 트래픽 (서비스별)
-DEV_DAILY_LIMIT = 1000
+DEV_DAILY_LIMIT = 10000
 
 # ---- 활용가이드(OpenAPI 활용가이드 v1.3) 코드표 ----
 

@@ -270,7 +270,6 @@ class DaejeonBusApiUsageSensor(DaejeonBusEntity, SensorEntity):
             "하루 자동 조회 횟수": est["refreshes_per_day"],
             "1회 조회당 호출": {name(a): n for a, n in self.coordinator.api_calls_per_refresh.items()},
             "API별 하루 예상": {name(a): n for a, n in est["per_day"].items()},
-            "주간 예상 합계": est["total_per_week"],
             "개발계정 한도 대비(%)": est["busiest_percent"],
             "개발계정 일일 한도(서비스별)": DEV_DAILY_LIMIT,
             "같은 키 전체 하루 예상": {name(a): n for a, n in key_total.items()},

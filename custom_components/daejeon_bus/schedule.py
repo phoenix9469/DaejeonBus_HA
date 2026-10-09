@@ -105,7 +105,6 @@ def estimate_auto_calls(
         "refreshes_per_day": refreshes,
         "per_day": per_day,
         "total_per_day": sum(per_day.values()),
-        "total_per_week": sum(per_day.values()) * len(weekdays),
         "busiest_percent": round(busiest / DEV_DAILY_LIMIT * 100, 1),
     }
 
@@ -129,7 +128,7 @@ def format_estimate(est: dict[str, Any]) -> str:
         lines.append(f"| {API_NAMES.get(api, api)} | {n:,}회 | {pct:.0f}%{warn} |")
     lines += [
         "",
-        f"하루 합계 **{est['total_per_day']:,}회**, 주간 합계 **{est['total_per_week']:,}회**",
+        f"하루 합계 **{est['total_per_day']:,}회** (트래픽 한도는 매일 0시에 초기화)",
     ]
     if any(n > DEV_DAILY_LIMIT for n in est["per_day"].values()):
         lines.append("")
