@@ -51,8 +51,18 @@ API_NAMES = {
     API_BUSPOS: "버스위치 (busposinfo)",
     API_ROUTE: "노선정류장 (busRouteInfo)",
 }
-# 공공데이터포털 개발계정 기본 일일 트래픽 (서비스별)
-DEV_DAILY_LIMIT = 10000
+# 공공데이터포털 개발계정 일일 트래픽 (서비스별, 매일 0시 초기화)
+DEV_DAILY_LIMIT = 10000  # 목록에 없는 서비스 기본값
+API_DAILY_LIMITS = {
+    API_ARRIVE: 10000,  # 대전광역시_정류소별 도착정보 조회
+    API_ROUTE: 10000,  # 대전광역시_노선정보조회
+    API_BUSPOS: 100,  # 대전광역시_버스 위치정보 조회
+}
+
+
+def api_daily_limit(service: str) -> int:
+    return API_DAILY_LIMITS.get(service, DEV_DAILY_LIMIT)
+
 
 # ---- 활용가이드(OpenAPI 활용가이드 v1.3) 코드표 ----
 

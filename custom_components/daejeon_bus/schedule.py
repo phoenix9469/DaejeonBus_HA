@@ -15,7 +15,7 @@ from .const import (
     DEFAULT_AUTO_START,
     DEFAULT_AUTO_WEEKDAYS,
     API_NAMES,
-    DEV_DAILY_LIMIT,
+    api_daily_limit,
     MIN_AUTO_INTERVAL,
     WEEKDAY_NAMES,
     WEEKDAYS,
@@ -96,7 +96,8 @@ def estimate_auto_calls(
     if refreshes:
         for api, n in (per_day_extra or {}).items():
             per_day[api] = per_day.get(api, 0) + n
-    busiest = max(per_day.values(), default=0)
+    # 한도 대비 가장 많이 쓰는 API 기준 (API마다 한도가 다름)
+    busiest = max((n / api_daily_limit(api) for api, n in per_day.items()), default=0)
     return {
         "enabled": enabled and bool(weekdays),
         "interval": interval,
@@ -105,7 +106,7 @@ def estimate_auto_calls(
         "refreshes_per_day": refreshes,
         "per_day": per_day,
         "total_per_day": sum(per_day.values()),
-        "busiest_percent": round(busiest / DEV_DAILY_LIMIT * 100, 1),
+        "busiest_percent": round(busiest * 100, 1),
     }
 
 
@@ -119,20 +120,23 @@ def format_estimate(est: dict[str, Any]) -> str:
         f"- 조회 시간대: 하루 {hours}시간 {mins}분 ({days})",
         f"- 간격: {est['interval']}초 → 하루 약 **{est['refreshes_per_day']:,}회** 조회",
         "",
-        "| API | 하루 예상 | 개발계정 한도 대비 |",
-        "| --- | --- | --- |",
+        "| API | 하루 예상 | 일일 한도 | 한도 대비 |",
+        "| --- | --- | --- | --- |",
     ]
+    over = []
     for api, n in est["per_day"].items():
-        pct = n / DEV_DAILY_LIMIT * 100
-        warn = " ⚠️" if n > DEV_DAILY_LIMIT else ""
-        lines.append(f"| {API_NAMES.get(api, api)} | {n:,}회 | {pct:.0f}%{warn} |")
+        limit = api_daily_limit(api)
+        warn = " ⚠️" if n > limit else ""
+        if n > limit:
+            over.append(f"{API_NAMES.get(api, api)} {limit:,}회")
+        lines.append(f"| {API_NAMES.get(api, api)} | {n:,}회 | {limit:,}회 | {n / limit * 100:.0f}%{warn} |")
     lines += [
         "",
         f"하루 합계 **{est['total_per_day']:,}회** (트래픽 한도는 매일 0시에 초기화)",
     ]
-    if any(n > DEV_DAILY_LIMIT for n in est["per_day"].values()):
+    if over:
         lines.append("")
         lines.append(
-            f"⚠️ 개발계정 일일 한도({DEV_DAILY_LIMIT:,}회)를 넘습니다. 간격을 늘리거나 시간대를 줄이세요."
+            f"⚠️ 일일 한도를 넘습니다 ({', '.join(over)}). 간격을 늘리거나 시간대를 줄이세요."
         )
     return "\n".join(lines)

@@ -20,7 +20,7 @@ from .const import (
     API_BUSPOS,
     API_NAMES,
     CONF_ENTRY_TYPE,
-    DEV_DAILY_LIMIT,
+    api_daily_limit,
     CONF_INCLUDE_BUSES,
     ENTRY_TYPE_COMMUTE,
     CONF_STATION_ID,
@@ -273,8 +273,10 @@ class DaejeonBusApiUsageSensor(DaejeonBusEntity, SensorEntity):
             "하루 자동 조회 횟수": est["refreshes_per_day"],
             "1회 조회당 호출": {name(a): n for a, n in self.coordinator.api_calls_per_refresh.items()},
             "API별 하루 예상": {name(a): n for a, n in est["per_day"].items()},
-            "개발계정 한도 대비(%)": est["busiest_percent"],
-            "개발계정 일일 한도(서비스별)": DEV_DAILY_LIMIT,
+            "한도 대비 최대(%)": est["busiest_percent"],
+            "API별 일일 한도": {
+                name(a): api_daily_limit(a) for a in est["per_day"] or self.coordinator.api_calls_per_refresh
+            },
             "같은 키 전체 하루 예상": {name(a): n for a, n in key_total.items()},
             "오늘 실제 호출": {name(a): n for a, n in self.coordinator.api.calls_today.items()},
         }

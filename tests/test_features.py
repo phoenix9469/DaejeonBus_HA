@@ -51,9 +51,16 @@ def test_estimate_weekday_morning():
     assert est["per_day"] == {"busposinfo": 121, "arrive": 121, "busRouteInfo": 1}
     assert est["total_per_day"] == 243
     assert "total_per_week" not in est  # 한도는 매일 초기화되므로 주간 합계는 보여주지 않음
-    assert est["busiest_percent"] == 1.2  # 121 / 10,000
+    # 버스위치는 하루 100회 한도 -> 121회는 초과
+    assert est["busiest_percent"] == 121.0
     text = format_estimate(est)
-    assert "하루 약 **121회**" in text and "⚠️" not in text
+    assert "하루 약 **121회**" in text
+    assert "| 버스위치 (busposinfo) | 121회 | 100회 | 121% ⚠️ |" in text
+    assert "| 도착정보 (arrive) | 121회 | 10,000회 | 1% |" in text
+    assert "버스위치 (busposinfo) 100회" in text  # 경고 문구에 한도
+    # 2시간 동안 100회 안에 들려면 75초 간격 (96+1 = 97회)
+    ok = estimate_auto_calls({**conf, "auto_interval": 75}, *COMMUTE)
+    assert ok["per_day"]["busposinfo"] == 97 and "⚠️" not in format_estimate(ok)
 
 
 def test_estimate_all_day_over_limit_and_off():
@@ -276,6 +283,6 @@ def test_estimate_min_interval_5_seconds():
     est = estimate_auto_calls(conf, *COMMUTE)
     assert est["interval"] == 5
     assert est["per_day"] == {"busposinfo": 1441, "arrive": 1441, "busRouteInfo": 1}
-    assert "⚠️" not in format_estimate(est)
+    assert "⚠️" in format_estimate(est)  # 버스위치 100회 한도 초과
     # 5초보다 짧게 넣어도 5초로 계산
     assert estimate_auto_calls({**conf, "auto_interval": 1}, *COMMUTE)["interval"] == 5
