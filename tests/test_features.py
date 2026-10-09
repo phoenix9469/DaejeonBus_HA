@@ -10,9 +10,10 @@ from custom_components.daejeon_bus.api import DaejeonBusApi, parse_response
 from custom_components.daejeon_bus.const import ARRIVE_URL, BUS_POS_URL, DOMAIN
 from custom_components.daejeon_bus.schedule import estimate_auto_calls, format_estimate
 
+from .helpers import fake_route_stops
+
 HERE = Path(__file__).parent
 ITEMS = parse_response((HERE / "fixture_31770.xml").read_text(encoding="utf-8"))
-NAMES = {"31910": "갈마육교", "31350": "KT인재개발원"}
 COMMUTE = ({"busposinfo": 1, "arrive": 1}, {"busRouteInfo": 1})
 STATION = ({"arrive": 1}, {})
 
@@ -20,7 +21,7 @@ STATION = ({"arrive": 1}, {})
 def _patches():
     return (
         patch.object(DaejeonBusApi, "get_arrivals", return_value=ITEMS[:2]),
-        patch.object(DaejeonBusApi, "get_station_name", side_effect=lambda a: NAMES.get(a)),
+        patch.object(DaejeonBusApi, "get_route_stops", side_effect=fake_route_stops),
     )
 
 
@@ -176,7 +177,8 @@ async def test_clear_stop_name_cache(hass, hass_storage):
         result = await hass.services.async_call(
             DOMAIN, "clear_stop_name_cache", {}, blocking=True, return_response=True
         )
-        assert result == {"removed_stops": 3}  # 파일 2개 + API로 찾은 31350
+        # 파일 2개 + 103번 노선 목록으로 찾은 31350, 31770 (31910은 이미 캐시에 있어 3번 노선은 조회 안 함)
+        assert result == {"removed_stops": 4}
         assert "daejeon_bus_stop_names" not in hass_storage
 
         # 버튼으로도 삭제, 이후 새로고침하면 API로 다시 채움
@@ -187,7 +189,7 @@ async def test_clear_stop_name_cache(hass, hass_storage):
         await hass.services.async_call(
             "button", "press", {"entity_id": "button.daejeon_bus_31770_refresh"}, blocking=True
         )
-        assert sorted(c.args[0] for c in lookup.call_args_list) == ["31350", "31910"]
+        assert sorted(c.args[0] for c in lookup.call_args_list) == ["30300038", "30300104"]
 
 
 async def test_reset_route_entities(hass):

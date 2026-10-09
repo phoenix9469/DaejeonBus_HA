@@ -11,7 +11,7 @@ from homeassistant.util import dt as dt_util
 import xmltodict
 from yarl import URL
 
-from .const import ARRIVE_URL, BUS_POS_URL, ROUTE_STOPS_URL, STATION_URLS
+from .const import ARRIVE_URL, BUS_POS_URL, ROUTE_STOPS_URL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,7 +87,6 @@ class DaejeonBusApi:
     def __init__(self, session: aiohttp.ClientSession, api_key: str) -> None:
         self._session = session
         self._key = _encode_key(api_key)
-        self._station_url: str | None = None
         # 오늘 API(서비스)별 실제 호출 수
         self._calls_date = dt_util.now().date()
         self._calls: dict[str, int] = {}
@@ -137,25 +136,3 @@ class DaejeonBusApi:
     async def get_route_stops(self, route_cd: str) -> list[dict[str, Any]]:
         """노선(busRouteId)의 경유 정류소 목록."""
         return await self._get(ROUTE_STOPS_URL, busRouteId=route_cd)
-
-    async def get_station_name(self, ars_id: str) -> str | None:
-        """정류소(arsId)의 이름(BUSSTOP_NM). 정류소정보 조회 서비스 사용.
-
-        사용 가능한 엔드포인트를 찾으면 기억해 두고, 어느 곳도 응답하지 않으면
-        DaejeonBusError를 발생시킨다.
-        """
-        urls = [self._station_url] if self._station_url else list(STATION_URLS)
-        last_err: DaejeonBusError | None = None
-        for url in urls:
-            try:
-                items = await self._get(url, arsId=ars_id)
-            except DaejeonBusError as err:
-                last_err = err
-                continue
-            self._station_url = url
-            for item in items:
-                name = str(item.get("BUSSTOP_NM") or "").strip()
-                if name:
-                    return name
-            return None
-        raise last_err or DaejeonBusError("정류소정보 조회 실패")

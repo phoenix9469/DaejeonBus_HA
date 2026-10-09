@@ -274,10 +274,14 @@ class DaejeonBusCoordinator(DaejeonBusBaseCoordinator):
                 or str(i.get("ROUTE_CD", "")).strip() in targets
             ]
 
-        # 최근 통과 정류소 이름: 캐시 파일에 없는 것만 API로 조회
+        # 최근 통과 정류소 이름: 캐시 파일에 없는 것만 그 버스 노선의 정류장 목록으로 조회
         await self.stop_names.async_resolve(
             self.api,
-            {str(i.get("LAST_STOP_ID") or "").strip() for i in items},
+            {
+                str(i.get("LAST_STOP_ID") or "").strip(): str(i.get("ROUTE_CD") or "").strip()
+                for i in items
+                if i.get("LAST_STOP_ID")
+            },
         )
 
         stop_name = next(

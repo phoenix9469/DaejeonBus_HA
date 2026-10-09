@@ -7,12 +7,6 @@ BASE_URL = "https://apis.data.go.kr/6300000"
 ARRIVE_URL = f"{BASE_URL}/arrive/getArrInfoByUid"
 BUS_POS_URL = f"{BASE_URL}/busposinfo/getBusPosByRtid"
 ROUTE_STOPS_URL = f"{BASE_URL}/busRouteInfo/getStaionByRoute"
-# 정류소정보 조회(getStationByUid). 공공데이터포털 경로를 먼저 시도하고,
-# 실패하면 대전시 BIS 원본 서버(활용가이드 v1.3 기준)를 시도한다.
-STATION_URLS = (
-    f"{BASE_URL}/stationinfo/getStationByUid",
-    "http://openapitraffic.daejeon.go.kr/api/rest/stationinfo/getStationByUid",
-)
 
 # 항목 유형
 CONF_ENTRY_TYPE = "entry_type"
@@ -52,12 +46,10 @@ WEEKDAY_NAMES = {"mon": "월", "tue": "화", "wed": "수", "thu": "목", "fri": 
 API_ARRIVE = "arrive"
 API_BUSPOS = "busposinfo"
 API_ROUTE = "busRouteInfo"
-API_STATION = "stationinfo"
 API_NAMES = {
     API_ARRIVE: "도착정보 (arrive)",
     API_BUSPOS: "버스위치 (busposinfo)",
     API_ROUTE: "노선정류장 (busRouteInfo)",
-    API_STATION: "정류장정보 (stationinfo)",
 }
 # 공공데이터포털 개발계정 기본 일일 트래픽 (서비스별)
 DEV_DAILY_LIMIT = 1000
