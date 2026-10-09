@@ -157,12 +157,8 @@ async def test_options_auto_confirm_step(hass):
 # ---- 삭제 기능 ----
 
 
-async def test_clear_stop_name_cache(hass, hass_storage):
-    hass_storage["daejeon_bus_stop_names"] = {
-        "version": 1,
-        "key": "daejeon_bus_stop_names",
-        "data": {"stops": {"31910": "갈마육교", "11111": "옛 정류장"}},
-    }
+async def test_clear_stop_name_cache(hass, cache_file):
+    cache_file.write_text('{"31910": "갈마육교", "11111": "옛 정류장"}', encoding="utf-8")
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={"entry_type": "station", "api_key": "k", "station_id": "31770"},
@@ -179,7 +175,7 @@ async def test_clear_stop_name_cache(hass, hass_storage):
         )
         # 파일 2개 + 103번 노선 목록으로 찾은 31350, 31770 (31910은 이미 캐시에 있어 3번 노선은 조회 안 함)
         assert result == {"removed_stops": 4}
-        assert "daejeon_bus_stop_names" not in hass_storage
+        assert not cache_file.exists()
 
         # 버튼으로도 삭제, 이후 새로고침하면 API로 다시 채움
         lookup.reset_mock()

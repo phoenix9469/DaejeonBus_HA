@@ -1,6 +1,6 @@
 """정류소 번호(arsId) -> 정류소 이름 캐시.
 
-이름은 파일(/config/.storage/daejeon_bus_stop_names)에 저장해 두고,
+이름은 파일(/config/daejeon_bus_stop_names.json, {"arsId": "이름"} 형식)에 저장해 두고,
 파일에 없는 정류소는 그 버스 노선의 경유 정류장 목록(getStaionByRoute)을 받아 파일에 추가한다.
 노선으로 조회가 받는 노선 경유 정류소 목록의 이름도 같은 파일에 넣는다.
 모든 항목(정류소/노선으로 조회)이 하나의 캐시를 공유한다.
@@ -8,10 +8,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
+from pathlib import Path
 from typing import Any
 
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_FINAL_WRITE
+from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
 
 from .api import DaejeonBusApi, DaejeonBusError
@@ -20,8 +25,10 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-STORAGE_KEY = f"{DOMAIN}_stop_names"
-STORAGE_VERSION = 1
+CACHE_FILENAME = f"{DOMAIN}_stop_names.json"  # /config 바로 아래 (직접 보고 고칠 수 있게)
+# 이전 버전의 저장 위치 (/config/.storage/daejeon_bus_stop_names) -> 처음 읽을 때 옮긴다
+LEGACY_STORAGE_KEY = f"{DOMAIN}_stop_names"
+LEGACY_STORAGE_VERSION = 1
 SAVE_DELAY = 10  # 초. 여러 번 바뀌어도 한 번에 저장
 DATA_KEY = "stop_names"  # hass.data[DOMAIN][DATA_KEY]
 
@@ -30,8 +37,10 @@ class StopNameCache:
     """arsId -> 정류소 이름. 파일 캐시 + 노선 경유 정류장 API."""
 
     def __init__(self, hass: HomeAssistant) -> None:
-        self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+        self._hass = hass
+        self.path = Path(hass.config.path(CACHE_FILENAME))
         self._names: dict[str, str] = {}
+        self._cancel_save: CALLBACK_TYPE | None = None
         self._loaded = False
         self._lock = asyncio.Lock()
         # 이번 실행 중 API로도 이름을 못 찾은 arsId (재조회 방지, 파일에는 저장 안 함)
@@ -44,10 +53,11 @@ class StopNameCache:
         async with self._lock:
             if self._loaded:
                 return
-            data = await self._store.async_load() or {}
-            self._names = {
-                str(k): str(v) for k, v in (data.get("stops") or {}).items() if v
-            }
+            self._names = await self._hass.async_add_executor_job(_read_file, self.path)
+            if not self._names:
+                await self._async_migrate_legacy()
+            # HA 종료 시 아직 저장 안 된 내용을 저장
+            self._hass.bus.async_listen_once(EVENT_HOMEASSISTANT_FINAL_WRITE, self._async_final_write)
             self._loaded = True
             _LOGGER.debug("정류소 이름 캐시 %d개를 읽었습니다", len(self._names))
 
@@ -58,8 +68,36 @@ class StopNameCache:
     def __len__(self) -> int:
         return len(self._names)
 
+    async def _async_migrate_legacy(self) -> None:
+        legacy: Store[dict[str, Any]] = Store(self._hass, LEGACY_STORAGE_VERSION, LEGACY_STORAGE_KEY)
+        data = await legacy.async_load()
+        if not data:
+            return
+        self._names = {str(k): str(v) for k, v in (data.get("stops") or {}).items() if v}
+        await self._async_save()
+        await legacy.async_remove()
+        _LOGGER.info("정류장 이름 캐시를 %s 로 옮겼습니다 (%d개)", self.path, len(self._names))
+
+    @callback
     def _schedule_save(self) -> None:
-        self._store.async_delay_save(lambda: {"stops": dict(sorted(self._names.items()))}, SAVE_DELAY)
+        if self._cancel_save:
+            self._cancel_save()
+
+        async def _save(_now: Any) -> None:
+            self._cancel_save = None
+            await self._async_save()
+
+        self._cancel_save = async_call_later(self._hass, SAVE_DELAY, _save)
+
+    async def _async_save(self) -> None:
+        names = dict(sorted(self._names.items()))
+        await self._hass.async_add_executor_job(_write_file, self.path, names)
+
+    async def _async_final_write(self, _event: Event) -> None:
+        if self._cancel_save:
+            self._cancel_save()
+            self._cancel_save = None
+            await self._async_save()
 
     def async_add(self, names: dict[str, str]) -> None:
         """이름을 캐시에 추가 (바뀐 게 있으면 파일 저장 예약)."""
@@ -125,13 +163,43 @@ class StopNameCache:
         """캐시 파일을 지우고 메모리도 비운다. 지운 정류장 수를 돌려준다."""
         await self.async_load()
         count = len(self._names)
-        await self._store.async_remove()
+        if self._cancel_save:
+            self._cancel_save()
+            self._cancel_save = None
+        await self._hass.async_add_executor_job(_remove_file, self.path)
         self._names = {}
         self._unknown = set()
         self._fetched_routes = set()
         self._api_ok = True
         _LOGGER.info("정류장 이름 캐시 %d개를 삭제했습니다", count)
         return count
+
+
+def _read_file(path: Path) -> dict[str, str]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as err:
+        _LOGGER.warning("정류장 이름 캐시 파일(%s)을 읽지 못했습니다: %s", path, err)
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k).strip(): str(v).strip() for k, v in data.items() if str(v).strip()}
+
+
+def _write_file(path: Path, names: dict[str, str]) -> None:
+    # 임시 파일에 쓴 뒤 바꿔치기 (쓰는 도중 꺼져도 파일이 깨지지 않게)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(names, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _remove_file(path: Path) -> None:
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
 
 
 def get_stop_cache(hass: HomeAssistant) -> StopNameCache:

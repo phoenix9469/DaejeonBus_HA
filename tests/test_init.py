@@ -96,13 +96,9 @@ async def test_config_flow(hass):
     }
 
 
-async def test_stop_name_lookup(hass, hass_storage):
+async def test_stop_name_lookup(hass, cache_file):
     """캐시 파일에 있으면 그대로 쓰고, 없을 때만 그 버스 노선의 정류장 목록을 받아 파일에 저장한다."""
-    hass_storage["daejeon_bus_stop_names"] = {
-        "version": 1,
-        "key": "daejeon_bus_stop_names",
-        "data": {"stops": {"31910": "갈마육교(캐시)"}},
-    }
+    cache_file.write_text('{"31910": "갈마육교(캐시)"}', encoding="utf-8")
     entry = MockConfigEntry(
         domain=DOMAIN, data={"api_key": "k", CONF_STATION_ID: "31770"}, unique_id="31770"
     )
@@ -137,7 +133,9 @@ async def test_stop_name_lookup(hass, hass_storage):
     # 노선 정류장 이름이 모두 파일에 저장 (지연 저장 시간 경과)
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=11))
     await hass.async_block_till_done()
-    saved = hass_storage["daejeon_bus_stop_names"]["data"]["stops"]
+    import json
+
+    saved = json.loads(cache_file.read_text(encoding="utf-8"))
     assert saved == {
         "31350": "KT인재개발원", "31770": "갈마네거리",
         "31910": "갈마육교(캐시)", "99999": "새정류소",
@@ -206,3 +204,30 @@ async def test_soon_threshold_option(hass):
         await hass.async_block_till_done()  # 옵션 변경 시 다시 로드
         assert hass.states.get("sensor.daejeon_bus_31770_3").state == "곧 도착 (1정류장 전)"
         assert hass.states.get("sensor.daejeon_bus_31770_103").state == "곧 도착 (4정류장 전)"
+
+
+async def test_stop_name_cache_migrates_legacy_storage(hass, hass_storage, cache_file):
+    """이전 버전의 .storage 캐시는 /config/daejeon_bus_stop_names.json 으로 옮긴다."""
+    import json
+
+    hass_storage["daejeon_bus_stop_names"] = {
+        "version": 1,
+        "key": "daejeon_bus_stop_names",
+        "data": {"stops": {"31910": "갈마육교", "31350": "KT인재개발원"}},
+    }
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={"api_key": "k", CONF_STATION_ID: "31770"}, unique_id="31770"
+    )
+    entry.add_to_hass(hass)
+    with (
+        patch.object(DaejeonBusApi, "get_arrivals", return_value=ITEMS[:2]),
+        patch.object(DaejeonBusApi, "get_route_stops", side_effect=fake_route_stops) as lookup,
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    lookup.assert_not_called()  # 옮긴 캐시에 이름이 다 있음
+    assert json.loads(cache_file.read_text(encoding="utf-8")) == {
+        "31350": "KT인재개발원", "31910": "갈마육교",
+    }
+    assert "daejeon_bus_stop_names" not in hass_storage
+    assert hass.states.get("sensor.daejeon_bus_31770_3").attributes["최근 통과 정류소"] == "갈마육교"
