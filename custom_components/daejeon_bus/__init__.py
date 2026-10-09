@@ -75,6 +75,8 @@ def _remove_obsolete_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # async_setup 시점에 프런트엔드가 준비되지 않았던 경우 대비 (이미 등록됐으면 아무것도 안 함)
+    await async_register_card(hass)
     coordinator: DaejeonBusBaseCoordinator
     if entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_COMMUTE:
         coordinator = CommuteCoordinator(hass, entry)

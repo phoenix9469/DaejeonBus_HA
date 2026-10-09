@@ -16,7 +16,6 @@ async def test_card_registered_when_frontend_available(hass):
 
     hass.http = MagicMock()
     hass.http.async_register_static_paths = AsyncMock()
-    hass.config.components.add("frontend")
     urls = MagicMock()
     hass.data[DATA_EXTRA_MODULE_URL] = urls
 
@@ -51,3 +50,21 @@ async def test_summary_sensor_has_card_attributes(hass):
     attrs = hass.states.get("sensor.daejeon_bus_31770").attributes
     assert attrs["새로고침 버튼"] == "button.daejeon_bus_31770_refresh"
     assert attrs["마지막 조회"]
+
+
+async def test_card_registration_retries_after_start(hass):
+    """frontend 가 늦게 준비되면 HA 시작 완료 후 다시 등록한다."""
+    from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL
+    from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+
+    hass.http = MagicMock()
+    hass.http.async_register_static_paths = AsyncMock()
+    assert not await async_register_card(hass)  # 아직 frontend 없음
+    assert hass.http.async_register_static_paths.call_count == 1  # 파일 서빙은 먼저
+
+    urls = MagicMock()
+    hass.data[DATA_EXTRA_MODULE_URL] = urls
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+    urls.add.assert_called_once()
+    assert hass.http.async_register_static_paths.call_count == 1
