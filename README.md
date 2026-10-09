@@ -383,7 +383,7 @@ actions:
 
 ## 대시보드
 
-### 전용 카드 `대전 버스` (권장, 추가 설치 없음)
+### 전용 카드 `대전 버스` (추가 설치 없음)
 
 통합구성요소에 카드가 들어 있어서 **HA가 시작될 때 자동으로 등록됩니다.** 리소스를 직접 추가하거나 HACS 카드를 설치할 필요가 없습니다.
 
@@ -395,15 +395,7 @@ actions:
 2. **요약 센서**를 고릅니다. 카드가 정류장 도착정보인지 노선으로 조회인지 알아서 판단합니다.
    - 정류장 도착정보: `sensor.daejeon_bus_<정류장번호>` (예: `sensor.daejeon_bus_31770`)
    - 노선으로 조회: `sensor.daejeon_bus_commute_<노선>_<정류장번호>` (예: `sensor.daejeon_bus_commute_213_31770`)
-3. 필요하면 제목과 보여줄 버스 수를 정합니다. 오른쪽 위 ↻ 버튼을 누르면 새로고침됩니다.
-
-YAML로 쓸 때:
-```yaml
-type: custom:daejeon-bus-card
-entity: sensor.daejeon_bus_31770
-max_rows: 10      # 선택, 기본 10
-title: 우리집 앞   # 선택, 비우면 정류장/노선 이름
-```
+3. 필요하면 제목과 보여줄 버스 수(기본 10)를 정합니다. 오른쪽 위 ↻ 버튼을 누르면 새로고침됩니다.
 
 | 조회 방식 | 카드 내용 |
 | --- | --- |
@@ -412,7 +404,7 @@ title: 우리집 앞   # 선택, 비우면 정류장/노선 이름
 
 - **자동 등록 방식:** 카드는 두 군데에 함께 등록됩니다.
   1. HA 첫 화면에 모듈로 포함됩니다.
-  2. 대시보드 리소스에 추가됩니다. 저장소 모드 대시보드일 때만 해당하며, 대시보드 → 리소스에 `/daejeon_bus/daejeon-bus-card.js?v=...`로 보입니다.
+  2. 대시보드 리소스에 추가됩니다. 대시보드 → 리소스에 `/daejeon_bus/daejeon-bus-card.js?v=...`로 보입니다.
 
   그래서 다른 브라우저가 예전 첫 화면을 캐시하고 있어도 대시보드를 열 때 카드가 로드됩니다. 통합구성요소 항목을 모두 삭제하면 이 리소스도 함께 지워집니다.
 - **`Custom element not found: daejeon-bus-card`가 나올 때:** 아래 순서로 확인하세요.
@@ -421,91 +413,5 @@ title: 우리집 앞   # 선택, 비우면 정류장/노선 이름
   3. 로그에 `대전 버스 대시보드 카드를 등록했습니다`가 있는지 봅니다.
   4. 브라우저에서 `http://<HA주소>:8123/daejeon_bus/daejeon-bus-card.js`를 열어 JS가 보이는지 확인합니다.
   5. 대시보드에서 강력 새로고침(Ctrl+F5)을 합니다. 모바일 앱은 설정 → Companion 앱 → 디버깅 → 프런트엔드 캐시 초기화를 합니다. F12 콘솔에 `DAEJEON-BUS-CARD`가 찍히면 로드된 것입니다.
-  6. 대시보드 → 리소스에 `/daejeon_bus/daejeon-bus-card.js`가 있는지 확인합니다. YAML 모드 대시보드는 자동으로 추가되지 않으므로 `lovelace: resources:`에 직접 넣습니다.
+  6. 대시보드 → 리소스에 `/daejeon_bus/daejeon-bus-card.js`가 있는지 확인합니다.
 - **업데이트:** 카드 파일이 바뀌면 주소가 달라지게 해 두어서, HA를 재시작하면 새 카드가 바로 적용됩니다.
-
-### HACS 카드로 꾸미기 (Mushroom + button-card)
-
-![대시보드 미리보기](docs/dashboard_preview.png)
-HACS → 프런트엔드에서 아래 두 카드를 설치합니다.
-
-| 카드 | 저장소 | 쓰는 곳 |
-| --- | --- | --- |
-| Mushroom | [piitaya/lovelace-mushroom](https://github.com/piitaya/lovelace-mushroom) | 머리글, 요약 칩 |
-| button-card | [custom-cards/button-card](https://github.com/custom-cards/button-card) | 버스 목록, 진행 막대 |
-
-설치 후 대시보드 편집 → 카드 추가 → **수동**에 아래 파일 내용을 붙여넣습니다. 엔티티 이름(`daejeon_bus_commute_213_31770`, `daejeon_bus_31770`)은 내 항목에 맞게 바꾸세요.
-
-| 파일 | 카드 구성 |
-| --- | --- |
-| [`dashboards/route_lookup.yaml`](dashboards/route_lookup.yaml) | **노선으로 조회** (아래 표) |
-| [`dashboards/station_arrivals.yaml`](dashboards/station_arrivals.yaml) | **정류장 도착정보** (아래 표) |
-
-**노선으로 조회 카드**
-
-| 구성 | 내용 |
-| --- | --- |
-| 머리글 | 첫 번째 버스 몇 정류장 전·도착예정. 아이콘 색: 3정류장 이내 빨강, 7정류장 이내 주황. 누르면 새로고침 |
-| 요약 칩 | 첫 버스 도착예정(분·초), 몇 정류장 전, 오는 버스 수, 조회 시각, 새로고침 |
-| 오고 있는 버스 | 최대 5대. 내 정류장에 가까울수록 막대가 깁니다. 첫 버스만 도착예정시간을 표시하고, 3정류장 이내면 빨간색입니다 |
-
-`variables`의 `max_rows`(보여줄 버스 수)와 `scale_stops`(막대 기준 정류장 수)로 조절할 수 있습니다.
-
-**정류장 도착정보 카드**
-
-| 구성 | 내용 |
-| --- | --- |
-| 머리글 | 정류장 이름, 도착예정 버스 수, 조회 시각. 누르면 새로고침, 길게 누르면 상세 |
-| 노선 목록 | 노선번호 배지(노선유형별 색: 급행 빨강 · 간선 파랑 · 지선 초록 · 외곽 갈색 · 마을 주황 · 첨단 보라), 큰 글씨로 최근 통과 정류장(운행대기면 `차고지 대기`), 작은 글씨로 행선지 방면, 오른쪽에 도착예정 |
-| 상태 강조 | `곧 도착`·`진입중`은 빨간색, `운행대기`는 회색, `첫차`·`막차`는 태그로 표시 |
-
-### HACS 없이 (기본 카드)
-
-#### 정류장 도착정보
-```yaml
-type: vertical-stack
-cards:
-  - type: button
-    entity: button.daejeon_bus_31770_refresh
-    name: 새로고침
-    tap_action:
-      action: perform-action
-      perform_action: button.press
-      target:
-        entity_id: button.daejeon_bus_31770_refresh
-  - type: markdown
-    content: >
-      {% set s = 'sensor.daejeon_bus_31770' %}
-      **{{ state_attr(s, '정류소 이름') }}** ({{ state_attr(s, '정류소 ID(arsId)') }})
-      · 조회 {{ as_timestamp(states('sensor.daejeon_bus_31770_last_update')) | timestamp_custom('%H:%M:%S') }}
-
-      | 노선 | 도착예정 | 최근 통과 | 행선지 |
-      |---|---|---|---|
-      {% for b in state_attr(s, '버스 목록') or [] -%}
-      | {{ b['노선'] }} | {{ b['도착예정'] }} | {{ b['최근 통과 정류소'] }} | {{ b['행선지'] }} |
-      {% endfor %}
-```
-
-#### 노선으로 조회
-```yaml
-type: vertical-stack
-cards:
-  - type: button
-    entity: button.daejeon_bus_commute_213_31770_refresh
-    name: 새로고침
-    tap_action:
-      action: perform-action
-      perform_action: button.press
-      target:
-        entity_id: button.daejeon_bus_commute_213_31770_refresh
-  - type: markdown
-    content: >
-      {% set s = 'sensor.daejeon_bus_commute_213_31770' %}
-      **{{ state_attr(s, '노선번호') }}번 → {{ state_attr(s, '내 정류장') }}** · {{ states(s) }}
-
-      | 순번 | 몇 정류장 전 | 남은 거리 | 도착예정 | 현재 위치 |
-      |---|---|---|---|---|
-      {% for b in state_attr(s, '버스 목록') or [] -%}
-      | {{ b['순번'] }} | {{ b['남은 정류장'] }} | {{ b['남은 거리(m)'] }}m | {{ b['도착예정시간'] or '-' }} | {{ b['현재 정류장'] }} |
-      {% endfor %}
-```
