@@ -111,7 +111,7 @@
   "services": {
     "clear_stop_name_cache": {
       "name": "정류장 이름 캐시 삭제",
-      "description": "정류장 이름 캐시 파일(/config/daejeon_bus_stop_names.json)을 지웁니다. 이름은 다음 조회 때 API로 다시 채워집니다."
+      "description": "정류장 이름 캐시 파일(/config/.storage/daejeon_bus_stop_names)을 지웁니다. 이름은 다음 조회 때 API로 다시 채워집니다."
     },
     "reset_route_entities": {
       "name": "노선 센서 초기화",
