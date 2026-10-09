@@ -68,3 +68,30 @@ async def test_card_registration_retries_after_start(hass):
     await hass.async_block_till_done()
     urls.add.assert_called_once()
     assert hass.http.async_register_static_paths.call_count == 1
+
+
+async def test_card_added_to_lovelace_resources(hass):
+    """대시보드 리소스에도 등록하고, 버전이 바뀌면 갱신, 삭제 시 정리한다."""
+    from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL
+    from homeassistant.components.lovelace.resources import ResourceStorageCollection
+
+    from custom_components.daejeon_bus import card
+
+    hass.http = MagicMock()
+    hass.http.async_register_static_paths = AsyncMock()
+    hass.data[DATA_EXTRA_MODULE_URL] = MagicMock()
+    resources = ResourceStorageCollection(hass, MagicMock())
+    resources.loaded = True
+
+    with patch.object(card, "_resource_collection", return_value=resources):
+        await card._async_sync_lovelace_resource(hass, f"{CARD_URL}?v=1")
+        await card._async_sync_lovelace_resource(hass, f"{CARD_URL}?v=1")
+        items = resources.async_items()
+        assert [i["url"] for i in items] == [f"{CARD_URL}?v=1"]
+        assert items[0]["type"] == "module"
+
+        await card._async_sync_lovelace_resource(hass, f"{CARD_URL}?v=2")
+        assert [i["url"] for i in resources.async_items()] == [f"{CARD_URL}?v=2"]
+
+        await card.async_remove_lovelace_resource(hass)
+        assert resources.async_items() == []

@@ -3,6 +3,11 @@
 www/daejeon-bus-card.js 를 /daejeon_bus/daejeon-bus-card.js 로 서빙하고 프런트엔드에
 모듈로 추가한다. 사용자가 리소스를 따로 등록하거나 HACS 카드를 설치할 필요가 없다.
 
+두 가지 방법으로 함께 등록한다.
+1. 프런트엔드 extra module (HA 첫 화면 HTML 에 포함)
+2. 대시보드 리소스 (저장소 모드일 때). 대시보드를 열 때마다 불러오므로, 브라우저가
+   예전 첫 화면을 캐시해 1번이 빠진 경우에도 카드가 로드된다.
+
 frontend 가 아직 준비되지 않았으면 HA 시작 완료 후 다시 시도한다.
 """
 from __future__ import annotations
@@ -41,8 +46,9 @@ async def async_register_card(hass: HomeAssistant) -> bool:
     if not hass.data.get(DATA_STATIC) and getattr(hass, "http", None) is not None:
         from homeassistant.components.http import StaticPathConfig
 
+        # 주소에 버전(?v=수정 시각)이 붙으므로 브라우저 캐시를 써도 업데이트가 반영된다
         await hass.http.async_register_static_paths(
-            [StaticPathConfig(CARD_URL, str(CARD_FILE), cache_headers=False)]
+            [StaticPathConfig(CARD_URL, str(CARD_FILE), cache_headers=True)]
         )
         hass.data[DATA_STATIC] = True
 
@@ -54,6 +60,7 @@ async def async_register_card(hass: HomeAssistant) -> bool:
         mtime = await hass.async_add_executor_job(lambda: int(CARD_FILE.stat().st_mtime))
         url = f"{CARD_URL}?v={mtime}"
         add_extra_js_url(hass, url)
+        await _async_sync_lovelace_resource(hass, url)
         hass.data[DATA_CARD_REGISTERED] = True
         _LOGGER.info("대전 버스 대시보드 카드를 등록했습니다: %s", url)
         return True
@@ -73,3 +80,51 @@ async def async_register_card(hass: HomeAssistant) -> bool:
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _retry)
     _LOGGER.debug("프런트엔드가 아직 준비되지 않아 카드 등록을 미룹니다")
     return False
+
+
+def _resource_collection(hass: HomeAssistant):
+    """저장소 모드 대시보드 리소스 컬렉션 (YAML 모드거나 없으면 None)."""
+    try:
+        from homeassistant.components.lovelace.const import LOVELACE_DATA
+        from homeassistant.components.lovelace.resources import ResourceStorageCollection
+    except ImportError:
+        return None
+    data = hass.data.get(LOVELACE_DATA)
+    resources = getattr(data, "resources", None)
+    return resources if isinstance(resources, ResourceStorageCollection) else None
+
+
+async def _async_sync_lovelace_resource(hass: HomeAssistant, url: str) -> None:
+    """대시보드 리소스에 카드 등록 (있으면 버전만 갱신)."""
+    resources = _resource_collection(hass)
+    if resources is None:
+        return
+    try:
+        if not resources.loaded:
+            await resources.async_load()
+            resources.loaded = True
+        for item in resources.async_items():
+            if str(item.get("url", "")).split("?")[0] == CARD_URL:
+                if item["url"] != url:
+                    await resources.async_update_item(item["id"], {"res_type": "module", "url": url})
+                return
+        await resources.async_create_item({"res_type": "module", "url": url})
+        _LOGGER.info("대시보드 리소스에 대전 버스 카드를 추가했습니다: %s", url)
+    except Exception as err:  # noqa: BLE001 - 리소스 등록 실패해도 extra module 로 동작
+        _LOGGER.debug("대시보드 리소스 등록 실패: %s", err)
+
+
+async def async_remove_lovelace_resource(hass: HomeAssistant) -> None:
+    """통합구성요소를 모두 지울 때 대시보드 리소스도 정리."""
+    resources = _resource_collection(hass)
+    if resources is None:
+        return
+    try:
+        if not resources.loaded:
+            await resources.async_load()
+            resources.loaded = True
+        for item in list(resources.async_items()):
+            if str(item.get("url", "")).split("?")[0] == CARD_URL:
+                await resources.async_delete_item(item["id"])
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("대시보드 리소스 삭제 실패: %s", err)

@@ -10,7 +10,7 @@ from homeassistant.helpers.typing import ConfigType
 import voluptuous as vol
 
 from .actions import async_clear_stop_cache, async_reset_route_entities
-from .card import async_register_card
+from .card import async_register_card, async_remove_lovelace_resource
 
 from .const import CONF_ENTRY_TYPE, DOMAIN, ENTRY_TYPE_COMMUTE
 from .coordinator import CommuteCoordinator, DaejeonBusBaseCoordinator, StationCoordinator
@@ -102,3 +102,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unloaded:
         hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     return unloaded
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """마지막 항목을 지우면 대시보드 리소스에서 카드도 뺀다."""
+    if not [e for e in hass.config_entries.async_entries(DOMAIN) if e.entry_id != entry.entry_id]:
+        await async_remove_lovelace_resource(hass)

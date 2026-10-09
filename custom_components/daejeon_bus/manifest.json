@@ -3,7 +3,8 @@
   "name": "대전 버스 (Daejeon Bus)",
   "after_dependencies": [
     "frontend",
-    "http"
+    "http",
+    "lovelace"
   ],
   "codeowners": [
     "@phoenix9469"
