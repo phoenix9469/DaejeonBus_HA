@@ -6,7 +6,6 @@
 """
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, time, timedelta
 import logging
 from typing import Any
@@ -29,19 +28,18 @@ from .const import (
     CONF_AUTO_REFRESH,
     CONF_AUTO_START,
     CONF_AUTO_WEEKDAYS,
-    CONF_LEAVE_MARGIN,
     CONF_ROUTE_CD,
     CONF_ROUTE_NO,
     CONF_STATION_NAME,
     CONF_STOP_SEQ,
-    CONF_WALK_MINUTES,
     DEFAULT_AUTO_END,
     DEFAULT_AUTO_INTERVAL,
     DEFAULT_AUTO_START,
     DEFAULT_AUTO_WEEKDAYS,
-    DEFAULT_LEAVE_MARGIN,
-    DEFAULT_WALK_MINUTES,
     MIN_AUTO_INTERVAL,
+    API_ARRIVE,
+    API_BUSPOS,
+    API_ROUTE,
     ROUTE_STOPS_MAX_AGE_HOURS,
     CONF_INCLUDE_BUSES,
     CONF_SOON_MINUTES,
@@ -57,7 +55,7 @@ from .const import (
     STATUS_SOON,
     STATUS_WAITING,
 )
-from .schedule import in_window, parse_time
+from .schedule import estimate_auto_calls, in_window, parse_time
 from .stops import get_stop_cache
 
 _LOGGER = logging.getLogger(__name__)
@@ -165,6 +163,18 @@ class DaejeonBusBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def conf(self) -> dict[str, Any]:
         return {**self.config_entry.data, **self.config_entry.options}
 
+    # 1회 조회당 API(서비스)별 호출 수 / 조회하는 날 하루 1번 더 부르는 API
+    api_calls_per_refresh: dict[str, int] = {}
+    api_calls_per_day_extra: dict[str, int] = {}
+
+    def auto_call_estimate(self, conf: dict[str, Any] | None = None) -> dict[str, Any]:
+        """자동 조회 설정으로 예상되는 API 호출 수 (conf를 주면 저장 전 값으로 계산)."""
+        return estimate_auto_calls(
+            conf if conf is not None else self.conf,
+            self.api_calls_per_refresh,
+            self.api_calls_per_day_extra,
+        )
+
     # ---- 자동 조회 (옵션, 기본 꺼짐) ----
 
     @property
@@ -206,6 +216,7 @@ class DaejeonBusCoordinator(DaejeonBusBaseCoordinator):
     """정류소(arsId)의 버스 도착정보를 조회한다."""
 
     device_model = "정류장 도착정보"
+    api_calls_per_refresh = {API_ARRIVE: 1}
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         conf = {**entry.data, **entry.options}
@@ -276,6 +287,9 @@ class CommuteCoordinator(DaejeonBusBaseCoordinator):
     """노선으로 조회: 노선의 모든 버스가 내 정류장에서 몇 정류장/몇 분 전인지."""
 
     device_model = "노선으로 조회"
+    api_calls_per_refresh = {API_BUSPOS: 1, API_ARRIVE: 1}
+    # 노선 정류장 목록은 24시간 캐시
+    api_calls_per_day_extra = {API_ROUTE: 1}
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         conf = {**entry.data, **entry.options}
@@ -299,19 +313,10 @@ class CommuteCoordinator(DaejeonBusBaseCoordinator):
         stop_name = stop.name if stop else self.station_id
         return f"{self.route_no}번 → {stop_name}"
 
-    def _minutes(self, key: str, default: float) -> float:
-        try:
-            return max(0.0, float(self.conf.get(key, default)))
-        except (TypeError, ValueError):
-            return default
-
-    @property
-    def walk_seconds(self) -> int:
-        return int(self._minutes(CONF_WALK_MINUTES, DEFAULT_WALK_MINUTES) * 60)
-
-    @property
-    def leave_margin_seconds(self) -> int:
-        return int(self._minutes(CONF_LEAVE_MARGIN, DEFAULT_LEAVE_MARGIN) * 60)
+    @callback
+    def async_invalidate_stops(self) -> None:
+        """다음 조회 때 노선 정류장 목록을 다시 받는다 (이름 캐시도 다시 채움)."""
+        self._stops_fetched = None
 
     async def _async_ensure_stops(self) -> None:
         """노선 정류소 목록은 하루에 한 번만 받는다."""
@@ -356,12 +361,10 @@ class CommuteCoordinator(DaejeonBusBaseCoordinator):
 
         buses = commute.approaching_buses(self._stops, my_stop, positions)
         commute.first_bus_eta(buses, arrivals, self.route_cd)
-        plan = commute.leave_plan(buses, self.walk_seconds)
 
         self.last_success_time = dt_util.now()
         return {
             "buses": buses,
-            "plan": plan,
             "my_stop": my_stop,
             "running": len(positions),
         }

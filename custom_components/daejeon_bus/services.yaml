@@ -1,0 +1,9 @@
+clear_stop_name_cache:
+
+reset_route_entities:
+  fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: daejeon_bus

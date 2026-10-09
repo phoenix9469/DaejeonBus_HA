@@ -106,6 +106,18 @@ class StopNameCache:
             )
 
 
+    async def async_clear(self) -> int:
+        """캐시 파일을 지우고 메모리도 비운다. 지운 정류장 수를 돌려준다."""
+        await self.async_load()
+        count = len(self._names)
+        await self._store.async_remove()
+        self._names = {}
+        self._unknown = set()
+        self._api_ok = True
+        _LOGGER.info("정류장 이름 캐시 %d개를 삭제했습니다", count)
+        return count
+
+
 def get_stop_cache(hass: HomeAssistant) -> StopNameCache:
     """모든 항목이 공유하는 캐시."""
     domain_data = hass.data.setdefault(DOMAIN, {})

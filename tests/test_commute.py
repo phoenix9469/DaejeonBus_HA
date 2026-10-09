@@ -56,7 +56,7 @@ def test_approaching_buses():
     assert buses[0]["meters_away"] == 31283 - 29819
 
 
-def test_eta_and_leave_plan():
+def test_first_bus_eta():
     stops, my_stop = _my_stop()
     buses = commute.approaching_buses(stops, my_stop, POSITIONS)
     assert commute.first_bus_eta(buses, ARRIVALS, ROUTE_CD) == 300
@@ -65,10 +65,6 @@ def test_eta_and_leave_plan():
     assert buses[0]["eta_seconds"] == 300
     assert all(b["eta_seconds"] is None for b in buses[1:])
 
-    plan = commute.leave_plan(buses, walk_seconds=240)
-    assert plan["index"] == 0 and plan["leave_in_seconds"] == 60
-    # 도보 6분이면 지금 오는 버스(5분)는 놓침
-    assert commute.leave_plan(buses, walk_seconds=360) is None
 
 
 def test_first_bus_eta_plate_mismatch_and_no_arrival():
@@ -84,7 +80,6 @@ def test_first_bus_eta_plate_mismatch_and_no_arrival():
     ]
     assert commute.first_bus_eta(buses, ignored, ROUTE_CD) is None
     assert buses[0]["eta_seconds"] is None
-    assert commute.leave_plan(buses, walk_seconds=0) is None
 
 
 def test_in_window():
@@ -123,10 +118,6 @@ async def test_commute_config_flow(hass):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {"route_cd": "213"}
         )
-        assert result["step_id"] == "commute_settings"
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"walk_minutes": 4, "leave_margin": 1}
-        )
     assert result["type"] == "create_entry"
     assert result["title"] == "213번 → 갈마네거리"
     assert result["data"] == {
@@ -136,8 +127,6 @@ async def test_commute_config_flow(hass):
         "route_cd": ROUTE_CD,
         "route_no": "213",
         "stop_seq": 64,
-        "walk_minutes": 4,
-        "leave_margin": 1,
     }
 
 
@@ -163,7 +152,8 @@ async def test_commute_config_flow_direction(hass):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {"stop_seq": "47"}
         )
-        assert result["step_id"] == "commute_settings"
+        assert result["type"] == "create_entry"
+        assert result["data"]["stop_seq"] == 47
 
 
 async def test_commute_config_flow_stop_not_on_route(hass):
@@ -192,8 +182,6 @@ def _entry(**options):
             "route_cd": ROUTE_CD,
             "route_no": "213",
             "stop_seq": 64,
-            "walk_minutes": 4,
-            "leave_margin": 1,
         },
         options=options,
         unique_id=f"commute_{ROUTE_CD}_64",
@@ -218,13 +206,13 @@ async def test_commute_entities(hass):
         assert second.state == "9"
         assert "도착예정시간" not in second.attributes  # 두 번째 버스는 정류장 수만
         assert hass.states.get(f"sensor.{prefix}_second_minutes") is None
-        # 첫 버스 5분 - 도보 4분 = 1분 -> 여유 1분 이하라 지금 출발
-        assert hass.states.get(f"sensor.{prefix}_leave_in").state == "1.0"
-        assert hass.states.get(f"binary_sensor.{prefix}_leave_now").state == "on"
-        advice = hass.states.get(f"sensor.{prefix}")
-        assert advice.state == "지금 출발"
-        assert advice.attributes["내 정류장"] == "갈마네거리"
-        assert len(advice.attributes["버스 목록"]) == 6
+        # 출발 안내 기능은 없음
+        assert hass.states.get(f"sensor.{prefix}_leave_in") is None
+        assert hass.states.get(f"binary_sensor.{prefix}_leave_now") is None
+        summary = hass.states.get(f"sensor.{prefix}")
+        assert summary.state == "6"  # 오는 버스 6대
+        assert summary.attributes["내 정류장"] == "갈마네거리"
+        assert len(summary.attributes["버스 목록"]) == 6
         assert hass.states.get(f"button.{prefix}_refresh") is not None
 
         # 노선 경유 정류소 이름(91개 중 고유 arsId)은 공용 정류소 이름 캐시에 저장
@@ -247,20 +235,23 @@ async def test_commute_entities(hass):
         assert pos_mock.call_count == 2
 
 
-async def test_commute_advice_when_bus_missed(hass):
-    entry = _entry(walk_minutes=6)
+async def test_commute_removes_obsolete_entities(hass):
+    """이전 버전의 출발 안내 엔티티는 정리된다."""
+    from homeassistant.helpers import entity_registry as er
+
+    entry = _entry()
     entry.add_to_hass(hass)
+    ent_reg = er.async_get(hass)
+    for platform, suffix in (("sensor", "leave_in"), ("binary_sensor", "leave_now")):
+        ent_reg.async_get_or_create(
+            platform, DOMAIN, f"{DOMAIN}_commute_{ROUTE_CD}_64_{suffix}", config_entry=entry
+        )
     p1, p2, p3 = _patch_api()
     with p1, p2, p3:
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-
-    prefix = "daejeon_bus_commute_213_31770"
-    assert hass.states.get(f"binary_sensor.{prefix}_leave_now").state == "off"
-    advice = hass.states.get(f"sensor.{prefix}")
-    assert advice.state == "놓침 · 다음 버스 9정류장 전"
-    assert advice.attributes["지금 오는 버스 탈 수 있음"] is False
-    assert hass.states.get(f"sensor.{prefix}_leave_in").state == "unknown"
+    left = {e.unique_id for e in er.async_entries_for_config_entry(ent_reg, entry.entry_id)}
+    assert not any(u.endswith(("_leave_in", "_leave_now")) for u in left)
 
 
 async def test_commute_without_arrival_info(hass):
@@ -275,8 +266,7 @@ async def test_commute_without_arrival_info(hass):
     prefix = "daejeon_bus_commute_213_31770"
     assert hass.states.get(f"sensor.{prefix}_first_stops").state == "3"
     assert hass.states.get(f"sensor.{prefix}_first_minutes").state == "unknown"
-    assert hass.states.get(f"sensor.{prefix}").state == "3정류장 전"
-    assert hass.states.get(f"binary_sensor.{prefix}_leave_now").state == "off"
+    assert hass.states.get(f"sensor.{prefix}").state == "6"
 
 
 async def test_auto_refresh_option(hass):

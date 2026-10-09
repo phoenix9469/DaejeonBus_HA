@@ -7,6 +7,7 @@ from typing import Any
 from urllib.parse import quote
 
 import aiohttp
+from homeassistant.util import dt as dt_util
 import xmltodict
 from yarl import URL
 
@@ -87,6 +88,22 @@ class DaejeonBusApi:
         self._session = session
         self._key = _encode_key(api_key)
         self._station_url: str | None = None
+        # 오늘 API(서비스)별 실제 호출 수
+        self._calls_date = dt_util.now().date()
+        self._calls: dict[str, int] = {}
+
+    @property
+    def calls_today(self) -> dict[str, int]:
+        if dt_util.now().date() != self._calls_date:
+            return {}
+        return dict(self._calls)
+
+    def _count(self, base: str) -> None:
+        today = dt_util.now().date()
+        if today != self._calls_date:
+            self._calls_date, self._calls = today, {}
+        service = base.rstrip("/").split("/")[-2]  # .../<service>/<operation>
+        self._calls[service] = self._calls.get(service, 0) + 1
 
     async def _get(self, base: str, **params: str) -> list[dict[str, Any]]:
         query = "&".join(
@@ -95,6 +112,7 @@ class DaejeonBusApi:
         )
         # 서비스키가 이중 인코딩되지 않도록 encoded=True
         url = URL(f"{base}?{query}", encoded=True)
+        self._count(base)
         try:
             async with asyncio.timeout(15):
                 async with self._session.get(url) as resp:

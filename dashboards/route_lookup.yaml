@@ -4,28 +4,20 @@
 #   'daejeon_bus_commute_213_31770' 을 내 항목의 엔티티 이름으로 바꾸세요 (찾아 바꾸기).
 type: vertical-stack
 cards:
-  # ── 1. 출발 안내 ──────────────────────────────────────────────
+  # ── 1. 첫 번째 버스 요약 ──────────────────────────────────────
   - type: custom:mushroom-template-card
     entity: sensor.daejeon_bus_commute_213_31770
     primary: >-
       {{ state_attr(entity, '노선번호') }}번 → {{ state_attr(entity, '내 정류장') }}
     secondary: >-
-      {{ states(entity) }}
-    icon: >-
-      {% set s = states(entity) %}
-      {% if s == '지금 출발' %}mdi:run-fast
-      {% elif '후 출발' in s %}mdi:walk
-      {% elif '놓침' in s %}mdi:bus-alert
-      {% else %}mdi:bus-clock{% endif %}
+      {% set eta = states('sensor.daejeon_bus_commute_213_31770_first_minutes') %}
+      {% set n = states('sensor.daejeon_bus_commute_213_31770_first_stops') %}
+      {% if n in ['unknown', 'unavailable'] %}오는 버스 없음
+      {% else %}첫 번째 버스 {{ n }}정류장 전{{ ' · ' ~ eta if eta not in ['unknown', 'unavailable'] }}{% endif %}
+    icon: mdi:bus-clock
     icon_color: >-
-      {% set s = states(entity) %}
-      {% if s == '지금 출발' %}red
-      {% elif '후 출발' in s %}green
-      {% elif '놓침' in s %}orange
-      {% else %}grey{% endif %}
-    badge_icon: >-
-      {{ 'mdi:alert-circle' if is_state('binary_sensor.daejeon_bus_commute_213_31770_leave_now', 'on') }}
-    badge_color: red
+      {% set n = states('sensor.daejeon_bus_commute_213_31770_first_stops') | int(-1) %}
+      {% if n < 0 %}grey{% elif n <= 3 %}red{% elif n <= 7 %}orange{% else %}blue{% endif %}
     fill_container: true
     multiline_secondary: true
     tap_action:
@@ -51,10 +43,10 @@ cards:
           {% set n = states('sensor.daejeon_bus_commute_213_31770_first_stops') %}
           {{ n ~ '정류장 전' if n not in ['unknown', 'unavailable'] else '-' }}
       - type: template
-        icon: mdi:walk
+        icon: mdi:bus-multiple
         icon_color: green
         content: >-
-          도보 {{ state_attr('sensor.daejeon_bus_commute_213_31770', '도보 시간(분)') | int(0) }}분
+          오는 버스 {{ states('sensor.daejeon_bus_commute_213_31770') | int(0) }}대
       - type: template
         icon: mdi:update
         content: >-

@@ -9,15 +9,16 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTime
+from homeassistant.const import CONF_API_KEY
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import slugify
 
 from .const import (
+    API_NAMES,
     CONF_ENTRY_TYPE,
+    DEV_DAILY_LIMIT,
     CONF_INCLUDE_BUSES,
     ENTRY_TYPE_COMMUTE,
     CONF_STATION_ID,
@@ -120,16 +121,23 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [
         DaejeonBusStationSensor(coordinator),
         DaejeonBusLastUpdateSensor(coordinator),
+        DaejeonBusApiUsageSensor(coordinator),
     ]
 
-    # 노선 센서: 대상 버스 목록 > 이전에 만든 센서 > 현재 도착정보 순으로 구성
+    # 노선 센서: 대상 버스 목록이 있으면 그 노선만, 없으면 이전에 만든 센서 + 현재 도착정보
     route_nos: list[str] = list(targets)
+    prefix = f"{DOMAIN}_{station_id}_route_"
+    ent_reg = er.async_get(hass)
+    for reg_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        if reg_entry.domain != "sensor" or not reg_entry.unique_id.startswith(prefix):
+            continue
+        route_no = reg_entry.unique_id[len(prefix):]
+        if not targets:
+            route_nos.append(route_no)
+        elif route_no not in targets:
+            # 대상 버스 목록에서 빠진 노선 센서는 정리
+            ent_reg.async_remove(reg_entry.entity_id)
     if not targets:
-        prefix = f"{DOMAIN}_{station_id}_route_"
-        ent_reg = er.async_get(hass)
-        for reg_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
-            if reg_entry.domain == "sensor" and reg_entry.unique_id.startswith(prefix):
-                route_nos.append(reg_entry.unique_id[len(prefix):])
         route_nos.extend((coordinator.data or {}).get("routes", {}))
 
     added: set[str] = set()
@@ -221,6 +229,53 @@ class DaejeonBusLastUpdateSensor(DaejeonBusEntity, SensorEntity):
         return self.coordinator.last_success_time
 
 
+class DaejeonBusApiUsageSensor(DaejeonBusEntity, SensorEntity):
+    """자동 조회 설정 기준 하루 예상 API 호출 수 (+ 오늘 실제 호출 수)."""
+
+    _attr_icon = "mdi:counter"
+    _attr_native_unit_of_measurement = "회/일"
+
+    def __init__(self, coordinator: DaejeonBusBaseCoordinator) -> None:
+        super().__init__(coordinator)
+        self._set_ids("sensor", "api_usage")
+        self._attr_name = "자동 조회 예상 API 호출"
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def native_value(self) -> int:
+        return self.coordinator.auto_call_estimate()["total_per_day"]
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        est = self.coordinator.auto_call_estimate()
+        api_key = self.coordinator.conf.get(CONF_API_KEY)
+        # 같은 서비스키를 쓰는 모든 항목 합계 (한도는 키+서비스 단위)
+        key_total: dict[str, int] = {}
+        for other in self.hass.data.get(DOMAIN, {}).values():
+            if (
+                isinstance(other, DaejeonBusBaseCoordinator)
+                and other.conf.get(CONF_API_KEY) == api_key
+            ):
+                for api, n in other.auto_call_estimate()["per_day"].items():
+                    key_total[api] = key_total.get(api, 0) + n
+        name = lambda api: API_NAMES.get(api, api)  # noqa: E731
+        return {
+            "자동 조회": "켜짐" if est["enabled"] else "꺼짐",
+            "조회 간격(초)": est["interval"],
+            "하루 자동 조회 횟수": est["refreshes_per_day"],
+            "1회 조회당 호출": {name(a): n for a, n in self.coordinator.api_calls_per_refresh.items()},
+            "API별 하루 예상": {name(a): n for a, n in est["per_day"].items()},
+            "주간 예상 합계": est["total_per_week"],
+            "개발계정 한도 대비(%)": est["busiest_percent"],
+            "개발계정 일일 한도(서비스별)": DEV_DAILY_LIMIT,
+            "같은 키 전체 하루 예상": {name(a): n for a, n in key_total.items()},
+            "오늘 실제 호출": {name(a): n for a, n in self.coordinator.api.calls_today.items()},
+        }
+
+
 class DaejeonBusRouteSensor(DaejeonBusEntity, SensorEntity):
     """노선별 도착정보. 상태 = 가장 먼저 도착할 버스의 도착예정시간."""
 
@@ -267,8 +322,6 @@ class DaejeonBusRouteSensor(DaejeonBusEntity, SensorEntity):
 # 노선으로 조회
 # ---------------------------------------------------------------------------
 
-LEAVE_NOW = "지금 출발"
-NO_BUS = "오는 버스 없음"
 
 
 def _minutes(seconds: int | None) -> float | None:
@@ -300,9 +353,9 @@ def _setup_commute(
             CommuteStopsSensor(coordinator, 0),
             CommuteMinutesSensor(coordinator),
             CommuteStopsSensor(coordinator, 1),
-            CommuteLeaveInSensor(coordinator),
-            CommuteAdviceSensor(coordinator),
+            CommuteSummarySensor(coordinator),
             DaejeonBusLastUpdateSensor(coordinator),
+            DaejeonBusApiUsageSensor(coordinator),
         ]
     )
 
@@ -313,10 +366,6 @@ class CommuteEntity(DaejeonBusEntity):
     @property
     def _buses(self) -> list[dict[str, Any]]:
         return (self.coordinator.data or {}).get("buses", [])
-
-    @property
-    def _plan(self) -> dict[str, Any] | None:
-        return (self.coordinator.data or {}).get("plan")
 
 
 _ORDINAL = ("첫 번째", "두 번째")
@@ -373,78 +422,32 @@ class CommuteMinutesSensor(CommuteEntity, SensorEntity):
         return commute_bus_info(0, buses[0]) if buses else None
 
 
-class CommuteLeaveInSensor(CommuteEntity, SensorEntity):
-    """탈 수 있는 첫 버스 기준, 몇 분 뒤에 집을 나서면 되는지."""
+class CommuteSummarySensor(CommuteEntity, SensorEntity):
+    """오고 있는 버스 수 + 전체 목록 (대시보드용)."""
 
-    _attr_icon = "mdi:walk"
-    _attr_device_class = SensorDeviceClass.DURATION
-    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_icon = "mdi:bus-multiple"
+    _attr_native_unit_of_measurement = "대"
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_suggested_display_precision = 0
-
-    def __init__(self, coordinator: CommuteCoordinator) -> None:
-        super().__init__(coordinator)
-        self._set_ids("sensor", "leave_in")
-        self._attr_name = "출발까지"
-
-    @property
-    def native_value(self) -> float | None:
-        plan = self._plan
-        return _minutes(plan["leave_in_seconds"]) if plan else None
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        plan = self._plan
-        if not plan:
-            return None
-        return {
-            **commute_bus_info(plan["index"], plan["bus"]),
-            "도보 시간(분)": _minutes(self.coordinator.walk_seconds),
-        }
-
-
-class CommuteAdviceSensor(CommuteEntity, SensorEntity):
-    """대시보드용 문구 + 접근 중인 버스 전체 목록."""
-
-    _attr_icon = "mdi:account-clock"
 
     def __init__(self, coordinator: CommuteCoordinator) -> None:
         super().__init__(coordinator)
         self._set_ids("sensor", None)
-        self._attr_name = "출발 안내"
+        self._attr_name = "오는 버스"
 
     @property
-    def native_value(self) -> str:
-        buses = self._buses
-        if not buses:
-            return NO_BUS
-        plan = self._plan
-        if plan:
-            leave_in = plan["leave_in_seconds"]
-            if leave_in <= self.coordinator.leave_margin_seconds:
-                return LEAVE_NOW
-            return f"{format_seconds(leave_in)} 후 출발"
-        if buses[0].get("eta_seconds") is None:
-            # 도착정보가 없으면 정류장 수만
-            return f"{buses[0]['stops_away']}정류장 전"
-        # 걸어가는 동안 지금 오는 버스가 먼저 도착
-        if len(buses) > 1:
-            return f"놓침 · 다음 버스 {buses[1]['stops_away']}정류장 전"
-        return "놓침"
+    def native_value(self) -> int:
+        return len(self._buses)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         data = self.coordinator.data or {}
         my_stop = data.get("my_stop")
-        plan = self._plan
         return {
             "노선번호": self.coordinator.route_no,
             "노선 ID": self.coordinator.route_cd,
             "내 정류장": my_stop.name if my_stop else None,
             "내 정류장 ID(arsId)": self.coordinator.station_id,
             "내 정류장 순번": self.coordinator.stop_seq,
-            "도보 시간(분)": _minutes(self.coordinator.walk_seconds),
-            "지금 오는 버스 탈 수 있음": plan is not None,
             "운행 중인 버스 수": data.get("running"),
             "버스 목록": [commute_bus_info(i, b) for i, b in enumerate(self._buses)],
         }

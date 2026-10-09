@@ -130,13 +130,3 @@ def first_bus_eta(
         eta = min(sec for sec, _ in etas)
     first["eta_seconds"] = eta
     return eta
-
-
-def leave_plan(buses: list[dict[str, Any]], walk_seconds: int) -> dict[str, Any] | None:
-    """지금 오는 버스를 탈 수 있으면 출발까지 남은 시간(초). 못 타거나 도착정보가 없으면 None."""
-    if not buses:
-        return None
-    eta = buses[0].get("eta_seconds")
-    if eta is None or eta < walk_seconds:
-        return None
-    return {"index": 0, "bus": buses[0], "leave_in_seconds": eta - walk_seconds}

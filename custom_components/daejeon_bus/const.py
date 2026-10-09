@@ -30,11 +30,7 @@ DEFAULT_SOON_MINUTES = 3
 CONF_ROUTE_CD = "route_cd"
 CONF_ROUTE_NO = "route_no"
 CONF_STOP_SEQ = "stop_seq"
-CONF_WALK_MINUTES = "walk_minutes"
-CONF_LEAVE_MARGIN = "leave_margin"
 
-DEFAULT_WALK_MINUTES = 5
-DEFAULT_LEAVE_MARGIN = 1
 ROUTE_STOPS_MAX_AGE_HOURS = 24
 
 # 자동 조회 (기본 꺼짐)
@@ -50,6 +46,21 @@ DEFAULT_AUTO_WEEKDAYS = ["mon", "tue", "wed", "thu", "fri"]
 DEFAULT_AUTO_INTERVAL = 60
 MIN_AUTO_INTERVAL = 30
 WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+WEEKDAY_NAMES = {"mon": "월", "tue": "화", "wed": "수", "thu": "목", "fri": "금", "sat": "토", "sun": "일"}
+
+# API 서비스 (공공데이터포털 트래픽 한도는 활용신청한 서비스마다 따로 매겨진다)
+API_ARRIVE = "arrive"
+API_BUSPOS = "busposinfo"
+API_ROUTE = "busRouteInfo"
+API_STATION = "stationinfo"
+API_NAMES = {
+    API_ARRIVE: "도착정보 (arrive)",
+    API_BUSPOS: "버스위치 (busposinfo)",
+    API_ROUTE: "노선정류장 (busRouteInfo)",
+    API_STATION: "정류장정보 (stationinfo)",
+}
+# 공공데이터포털 개발계정 기본 일일 트래픽 (서비스별)
+DEV_DAILY_LIMIT = 1000
 
 # ---- 활용가이드(OpenAPI 활용가이드 v1.3) 코드표 ----
 
