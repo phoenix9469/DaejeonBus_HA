@@ -80,7 +80,10 @@ cards:
             }
             const tag = (b['첫/막차'] === '첫차' || b['첫/막차'] === '막차')
               ? ' ' + pill(b['첫/막차'], '#455a64') : '';
-            const last = b['최근 통과 정류소'] ? `${b['최근 통과 정류소']} 통과` : '';
+            // 큰 글씨: 최근 통과 정류장 (운행대기면 차고지 대기), 작은 글씨: 행선지 방면
+            const last = b['최근 통과 정류소'] ? `${b['최근 통과 정류소']} 통과`
+              : (status === '운행대기' ? '차고지 대기' : '-');
+            const dest = b['행선지'] ? `${b['행선지']} 방면` : '';
             const border = i < buses.length - 1 ? 'border-bottom:1px solid var(--divider-color, rgba(127,127,127,.2));' : '';
             return `
               <div style="display:flex;align-items:center;gap:12px;padding:10px 4px;${border}">
@@ -88,9 +91,9 @@ cards:
                             font-weight:700;font-size:15px;color:#fff;background:${color}">${b['노선']}</div>
                 <div style="flex:1;min-width:0">
                   <div style="font-weight:600;color:var(--primary-text-color);white-space:nowrap;
-                              overflow:hidden;text-overflow:ellipsis">${b['행선지'] || ''} 방면${tag}</div>
+                              overflow:hidden;text-overflow:ellipsis">${last}${tag}</div>
                   <div style="font-size:12px;color:var(--secondary-text-color);white-space:nowrap;
-                              overflow:hidden;text-overflow:ellipsis">${last}</div>
+                              overflow:hidden;text-overflow:ellipsis">${dest}</div>
                 </div>
                 <div style="text-align:right;white-space:nowrap">${right}</div>
               </div>`;
