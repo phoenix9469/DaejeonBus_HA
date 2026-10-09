@@ -254,8 +254,8 @@ async def test_commute_removes_obsolete_entities(hass):
     assert not any(u.endswith(("_leave_in", "_leave_now")) for u in left)
 
 
-async def test_commute_without_arrival_info(hass):
-    """도착정보가 없으면 정류장 수만 보여준다."""
+async def test_commute_route_ended_not_in_arrivals(hass):
+    """막차가 지나가 정류장 도착정보에 노선이 없으면, 위치에 버스가 보여도 오는 버스 없음."""
     entry = _entry()
     entry.add_to_hass(hass)
     p1, p2, p3 = _patch_api(arrivals=[])
@@ -264,9 +264,33 @@ async def test_commute_without_arrival_info(hass):
         await hass.async_block_till_done()
 
     prefix = "daejeon_bus_commute_213_31770"
-    assert hass.states.get(f"sensor.{prefix}_first_stops").state == "3"
-    assert hass.states.get(f"sensor.{prefix}_first_minutes").state == "unknown"
-    assert hass.states.get(f"sensor.{prefix}").state == "6"
+    summary = hass.states.get(f"sensor.{prefix}")
+    assert summary.state == "0"
+    assert summary.attributes["운행 안내"] == "도착정보 없음"
+    assert summary.attributes["버스 목록"] == []
+    assert hass.states.get(f"sensor.{prefix}_first_stops").state == "unknown"
+
+
+def test_match_arrivals():
+    stops, my_stop = _my_stop()
+    buses = commute.approaching_buses(stops, my_stop, POSITIONS)
+
+    # 정상: 그대로
+    kept, notice = commute.match_arrivals(list(buses), ARRIVALS, ROUTE_CD)
+    assert len(kept) == 6 and notice is None
+
+    # 다른 노선만 있음 → 이 노선은 끊김
+    other = [{**ARRIVALS[0], "ROUTE_CD": "30300001"}]
+    assert commute.match_arrivals(list(buses), other, ROUTE_CD) == ([], "도착정보 없음")
+
+    # 차고지 운행대기만 있음
+    waiting = [{**ARRIVALS[0], "MSG_TP": "07"}]
+    assert commute.match_arrivals(list(buses), waiting, ROUTE_CD) == ([], "운행대기")
+
+    # 두 번째 버스가 막차 → 그 뒤 버스는 뺀다
+    last = [{**ARRIVALS[0], "LAST_CAT": "2", "CAR_REG_NO": buses[1]["plate"]}]
+    kept, notice = commute.match_arrivals(list(buses), last, ROUTE_CD)
+    assert len(kept) == 2 and kept[1]["last_bus"] and notice is None
 
 
 async def test_auto_refresh_option(hass):

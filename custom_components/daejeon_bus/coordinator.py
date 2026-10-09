@@ -435,9 +435,11 @@ class CommuteCoordinator(DaejeonBusBaseCoordinator):
             )
 
         # 3) 내 정류장 도착정보: 지금 오는 버스의 도착예정시간 (위치 API가 막히면 대체 자료)
+        arrivals_ok = False
         try:
             arrivals = await self.api.get_arrivals(self.station_id)
             self._quota_ok(API_ARRIVE)
+            arrivals_ok = True
         except DaejeonBusQuotaError as err:
             self._quota_hit(err, API_ARRIVE)
             arrivals = []
@@ -448,8 +450,12 @@ class CommuteCoordinator(DaejeonBusBaseCoordinator):
             (str(i["STOP_NAME"]).strip() for i in arrivals if i.get("STOP_NAME")), None
         )
 
+        notice: str | None = None
         if positions is not None:
             buses = commute.approaching_buses(self._stops, my_stop, positions)
+            if arrivals_ok:
+                # 정류장 도착정보에 없는 노선(막차 통과·운행 종료)은 위치에 보여도 오지 않는다
+                buses, notice = commute.match_arrivals(buses, arrivals, self.route_cd)
             commute.first_bus_eta(buses, arrivals, self.route_cd)
             source, running = API_BUSPOS, len(positions)
         else:
@@ -461,7 +467,7 @@ class CommuteCoordinator(DaejeonBusBaseCoordinator):
                 # 도착정보도 없음: 마지막 정보 유지
                 return self.data or {
                     "buses": [], "my_stop": my_stop, "running": None,
-                    "source": None, "stop_name": stop_name,
+                    "source": None, "stop_name": stop_name, "notice": None,
                 }
             source, running = API_ARRIVE, None
 
@@ -472,4 +478,5 @@ class CommuteCoordinator(DaejeonBusBaseCoordinator):
             "running": running,
             "source": source,
             "stop_name": stop_name,
+            "notice": notice,
         }

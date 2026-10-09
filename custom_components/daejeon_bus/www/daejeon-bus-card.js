@@ -21,6 +21,7 @@ const ROUTE_TYPE_COLOR = {
 
 const esc = (v) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const pill = (text, bg) => `<span class="pill" style="background:${bg}">${esc(text)}</span>`;
 
 const timeText = (iso) => {
   if (!iso) return "";
@@ -189,7 +190,6 @@ class DaejeonBusCard extends HTMLElement {
     );
     if (!buses.length) return header + `<div class="list"><div class="empty">도착 예정인 버스가 없습니다</div></div>`;
 
-    const pill = (text, bg) => `<span class="pill" style="background:${bg}">${esc(text)}</span>`;
     const rows = buses.slice(0, this._config.max_rows).map((b) => {
       const status = b["운행 상태"];
       let right;
@@ -234,7 +234,10 @@ class DaejeonBusCard extends HTMLElement {
       accent = n <= 3 ? "#f44336" : n <= 7 ? "#ff9800" : "#2196f3";
     }
     const header = this._header("mdi:bus-clock", accent, `${a["노선번호"]}번 → ${a["내 정류장"] || ""}`, subtitle + this._updated(st), st);
-    if (!buses.length) return header + `<div class="list"><div class="empty">오고 있는 버스가 없습니다</div></div>`;
+    if (!buses.length) {
+      const why = { "도착정보 없음": "정류장 도착정보에 이 노선이 없습니다 (막차 통과 또는 운행 종료)", "운행대기": "차고지에서 운행대기 중입니다" }[a["운행 안내"]];
+      return header + `<div class="list"><div class="empty">오고 있는 버스가 없습니다${why ? `<br><span class="sub">${esc(why)}</span>` : ""}</div></div>`;
+    }
 
     const scale = this._config.scale_stops || 30;
     const rows = buses.slice(0, this._config.max_rows).map((b, i) => {
@@ -247,7 +250,7 @@ class DaejeonBusCard extends HTMLElement {
       const eta = b["도착예정시간"] ? `<span style="font-weight:600;color:${color}">${esc(b["도착예정시간"])}</span>` : "";
       return `
         <div class="bus">
-          <div class="bus-top"><span><b>${i + 1}번째 · ${esc(stops)}정류장 전</b>${km}</span>${eta}</div>
+          <div class="bus-top"><span><b>${i + 1}번째 · ${esc(stops)}정류장 전</b>${km}${b["막차"] ? " " + pill("막차", "#455a64") : ""}</span>${eta}</div>
           <div class="track">
             <div class="fill" style="width:${pct}%;background:${color};opacity:${i === 0 ? 1 : 0.55}"></div>
             <ha-icon icon="mdi:bus-side" style="left:calc(${pct}% - 13px);color:${color}"></ha-icon>

@@ -348,6 +348,8 @@ def commute_bus_info(index: int, bus: dict[str, Any]) -> dict[str, Any]:
         info["도착예정시간"] = format_seconds(bus["eta_seconds"])
         info["도착예정(초)"] = bus["eta_seconds"]
         info["도착예정(분)"] = _minutes(bus["eta_seconds"])
+    if bus.get("last_bus"):
+        info["막차"] = True
     return info
 
 
@@ -460,6 +462,8 @@ class CommuteSummarySensor(CommuteEntity, SensorEntity):
             "내 정류장 ID(arsId)": self.coordinator.station_id,
             "내 정류장 순번": self.coordinator.stop_seq,
             "운행 중인 버스 수": data.get("running"),
+            # 정류장 도착정보에 이 노선이 없으면(막차 통과 등) 위치에 보여도 목록에서 뺀다
+            "운행 안내": data.get("notice"),
             "버스 목록": [commute_bus_info(i, b) for i, b in enumerate(self._buses)],
             **self._card_attributes(),
         }

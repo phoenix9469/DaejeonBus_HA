@@ -161,7 +161,37 @@ def buses_from_arrivals(
                 "current_stop_id": last_stop or None,
                 "current_seq": None,
                 "eta_seconds": _int(item.get("EXTIME_SEC")),
+                "last_bus": _str(item.get("LAST_CAT")) == "2",
             }
         )
     buses.sort(key=lambda b: (b["stops_away"], b["eta_seconds"] or 0))
     return buses
+
+
+def match_arrivals(
+    buses: list[dict[str, Any]], arrivals: list[dict[str, Any]], route_cd: str
+) -> tuple[list[dict[str, Any]], str | None]:
+    """버스 위치 목록을 내 정류장 도착정보와 맞춘다 (도착정보를 정상으로 받았을 때만 호출).
+
+    도착정보에는 노선마다 지금 오는 버스 1대만 나온다. 정류장 도착정보에 이 노선이 없으면
+    (막차가 지나갔거나 운행 종료) 위치 API에 버스가 보여도 내 정류장으로 오지 않는 버스다.
+    - 노선 없음: 빈 목록, "도착정보 없음"
+    - 차고지 운행대기(MSG_TP 07)만 있음: 빈 목록, "운행대기"
+    - 막차(LAST_CAT 2): 그 차량을 막차로 표시하고 뒤따르는 버스는 뺀다
+    """
+    entries = [i for i in arrivals if _str(i.get("ROUTE_CD")) == _str(route_cd)]
+    if not entries:
+        return [], "도착정보 없음"
+    running = [i for i in entries if _str(i.get("MSG_TP")) != "07"]
+    if not running:
+        return [], "운행대기"
+
+    last_plates = {
+        _str(i.get("CAR_REG_NO")) for i in running
+        if _str(i.get("LAST_CAT")) == "2" and _str(i.get("CAR_REG_NO"))
+    }
+    for idx, bus in enumerate(buses):
+        if bus["plate"] in last_plates:
+            bus["last_bus"] = True
+            return buses[: idx + 1], None  # 가까운 순이므로 막차 뒤 버스는 운행하지 않음
+    return buses, None
