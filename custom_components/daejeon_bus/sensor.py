@@ -208,6 +208,7 @@ class DaejeonBusStationSensor(DaejeonBusEntity, SensorEntity):
             "정류소 ID(arsId)": self._station_id,
             "정류소 이름": data.get("stop_name"),
             "버스 목록": buses,
+            **self._card_attributes(),
         }
 
 
@@ -451,4 +452,5 @@ class CommuteSummarySensor(CommuteEntity, SensorEntity):
             "내 정류장 순번": self.coordinator.stop_seq,
             "운행 중인 버스 수": data.get("running"),
             "버스 목록": [commute_bus_info(i, b) for i, b in enumerate(self._buses)],
+            **self._card_attributes(),
         }

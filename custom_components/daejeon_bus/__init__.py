@@ -10,6 +10,7 @@ from homeassistant.helpers.typing import ConfigType
 import voluptuous as vol
 
 from .actions import async_clear_stop_cache, async_reset_route_entities
+from .card import async_register_card
 
 from .const import CONF_ENTRY_TYPE, DOMAIN, ENTRY_TYPE_COMMUTE
 from .coordinator import CommuteCoordinator, DaejeonBusBaseCoordinator, StationCoordinator
@@ -24,7 +25,8 @@ ATTR_CONFIG_ENTRY_ID = "config_entry_id"
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """서비스 등록: 캐시 파일 삭제, 노선 센서 초기화."""
+    """대시보드 카드 등록 + 서비스 등록 (캐시 파일 삭제, 노선 센서 초기화)."""
+    await async_register_card(hass)
 
     async def _clear_cache(call: ServiceCall) -> ServiceResponse:
         removed = await async_clear_stop_cache(hass)

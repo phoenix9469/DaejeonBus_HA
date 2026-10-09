@@ -1,6 +1,10 @@
 {
   "domain": "daejeon_bus",
   "name": "대전 버스 (Daejeon Bus)",
+  "after_dependencies": [
+    "frontend",
+    "http"
+  ],
   "codeowners": [
     "@phoenix9469"
   ],

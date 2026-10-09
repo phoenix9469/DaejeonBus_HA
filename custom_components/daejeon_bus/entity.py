@@ -1,6 +1,9 @@
 """대전 버스 공통 엔티티."""
 from __future__ import annotations
 
+from typing import Any
+
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -34,3 +37,15 @@ class DaejeonBusEntity(CoordinatorEntity[DaejeonBusBaseCoordinator]):
         tail = f"_{suffix}" if suffix else ""
         self._attr_unique_id = f"{DOMAIN}_{self._key}{tail}"
         self.entity_id = f"{platform}.{DOMAIN}_{self._slug}{tail}"
+
+    def _card_attributes(self) -> dict[str, Any]:
+        """대시보드 카드(daejeon-bus-card)가 쓰는 정보: 새로고침 버튼, 마지막 조회 시각."""
+        # 사용자가 이름을 바꿨으면 레지스트리 값, 아직 등록 전이면 기본 엔티티 ID
+        refresh = er.async_get(self.hass).async_get_entity_id(
+            "button", DOMAIN, f"{DOMAIN}_{self._key}_refresh"
+        ) or f"button.{DOMAIN}_{self._slug}_refresh"
+        last = self.coordinator.last_success_time
+        return {
+            "새로고침 버튼": refresh,
+            "마지막 조회": last.isoformat() if last else None,
+        }
