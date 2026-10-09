@@ -322,3 +322,24 @@ async def test_auto_refresh_option(hass):
         async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=200))
         await hass.async_block_till_done()
         assert pos_mock.call_count == calls
+
+
+def test_route_ended_midway_at_night():
+    """실제 23시 응답: 213번은 중간에서 운행 종료하고 그 자리에서 다음 날 출발한다.
+
+    위치 API엔 갈마네거리 앞쪽 버스 2대(20·39정류장 전)가 보이지만 정류장 도착정보엔
+    213번이 없으므로 오는 버스가 없어야 한다.
+    """
+    stops, my_stop = _my_stop()
+    night = parse_response(
+        (HERE / "fixture_buspos_30300146_night.xml").read_text(encoding="utf-8")
+    )
+    buses = commute.approaching_buses(stops, my_stop, night)
+    assert [b["stops_away"] for b in buses] == [20, 39]
+    # 23:04 갈마네거리 도착정보: 119·105·103·3·312번만 (213번 없음)
+    arrivals = [
+        {"ROUTE_CD": r, "MSG_TP": "03", "LAST_CAT": c}
+        for r, c in (("30300049", "2"), ("30300040", "2"), ("30300038", "3"),
+                     ("30300104", "2"), ("30300056", "2"))
+    ]
+    assert commute.match_arrivals(buses, arrivals, ROUTE_CD) == ([], "도착정보 없음")
