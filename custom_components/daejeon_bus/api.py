@@ -28,6 +28,23 @@ class DaejeonBusAuthError(DaejeonBusError):
     """서비스키 오류."""
 
 
+class DaejeonBusQuotaError(DaejeonBusError):
+    """공공데이터포털 일일 서비스 요청 한도 초과 (매일 0시 초기화)."""
+
+    def __init__(self, message: str, service: str | None = None) -> None:
+        super().__init__(message)
+        self.service = service
+
+
+QUOTA_MARKERS = ("LIMITED_NUMBER_OF_SERVICE_REQUESTS", "요청제한")
+QUOTA_REASON_CODES = {"22"}
+
+
+def _service_of(base: str) -> str:
+    """.../<service>/<operation> 에서 service."""
+    return base.rstrip("/").split("/")[-2]
+
+
 def _encode_key(api_key: str) -> str:
     """공공데이터포털 서비스키를 URL에 넣을 수 있게 인코딩한다.
 
@@ -60,7 +77,10 @@ def parse_response(text: str) -> list[dict[str, Any]]:
     if "OpenAPI_ServiceResponse" in data:
         header = data["OpenAPI_ServiceResponse"].get("cmmMsgHeader") or {}
         reason = header.get("returnAuthMsg") or header.get("errMsg") or "unknown"
+        err_msg = str(header.get("errMsg") or "")
         code = str(header.get("returnReasonCode") or "")
+        if code in QUOTA_REASON_CODES or any(m in f"{err_msg} {reason}" for m in QUOTA_MARKERS):
+            raise DaejeonBusQuotaError(f"일일 요청 한도 초과: {reason}")
         if "KEY" in reason or code in {"20", "30", "31", "32"}:
             raise DaejeonBusAuthError(reason)
         raise DaejeonBusError(reason)
@@ -101,7 +121,7 @@ class DaejeonBusApi:
         today = dt_util.now().date()
         if today != self._calls_date:
             self._calls_date, self._calls = today, {}
-        service = base.rstrip("/").split("/")[-2]  # .../<service>/<operation>
+        service = _service_of(base)
         self._calls[service] = self._calls.get(service, 0) + 1
 
     async def _get(self, base: str, **params: str) -> list[dict[str, Any]]:
@@ -116,13 +136,21 @@ class DaejeonBusApi:
             async with asyncio.timeout(15):
                 async with self._session.get(url) as resp:
                     text = await resp.text()
+                    if resp.status == 429 or any(m in text for m in QUOTA_MARKERS):
+                        raise DaejeonBusQuotaError(
+                            f"일일 요청 한도 초과 (HTTP {resp.status})", _service_of(base)
+                        )
                     if resp.status in (401, 403):
                         raise DaejeonBusAuthError(f"HTTP {resp.status}: {text[:200]}")
                     if resp.status != 200:
                         raise DaejeonBusError(f"HTTP {resp.status}: {text[:200]}")
         except (aiohttp.ClientError, TimeoutError) as err:
             raise DaejeonBusError(f"통신 오류: {err}") from err
-        return parse_response(text)
+        try:
+            return parse_response(text)
+        except DaejeonBusQuotaError as err:
+            err.service = _service_of(base)
+            raise
 
     async def get_arrivals(self, ars_id: str) -> list[dict[str, Any]]:
         """정류소(arsId)의 버스 도착정보."""

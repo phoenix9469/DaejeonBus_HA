@@ -178,6 +178,7 @@ flowchart LR
 | `sensor.daejeon_bus_31770` | 도착예정 버스 수 (운행대기 제외) | `버스 목록` (노선별 첫 차 요약) |
 | `sensor.daejeon_bus_31770_last_update` | 마지막 조회 시각 | |
 | `sensor.daejeon_bus_31770_api_usage` | 자동 조회 예상 API 호출 (회/일) | [예상 API 호출 수](#예상-api-호출-수) |
+| `binary_sensor.daejeon_bus_31770_api_quota` | API 일일 호출 한도 초과면 on | [한도 초과](#api-일일-호출-한도-초과) |
 | `button.daejeon_bus_31770_refresh` | 새로고침 | |
 | `button.daejeon_bus_31770_reset_routes` | 노선 센서 초기화 | [삭제·초기화](#삭제초기화) |
 | `button.daejeon_bus_31770_clear_cache` | 정류장 이름 캐시 삭제 | [삭제·초기화](#삭제초기화) |
@@ -216,6 +217,7 @@ flowchart LR
 | `sensor.daejeon_bus_commute_213_31770` (오는 버스) | `6` (대) | 속성 `버스 목록`: 오고 있는 버스 전체 |
 | `sensor.daejeon_bus_commute_213_31770_last_update` | 시각 | 마지막 조회 |
 | `sensor.daejeon_bus_commute_213_31770_api_usage` | `243` (회/일) | [자동 조회 예상 API 호출](#예상-api-호출-수) |
+| `binary_sensor.daejeon_bus_commute_213_31770_api_quota` | on / off | [API 일일 호출 한도 초과](#api-일일-호출-한도-초과) |
 | `button.daejeon_bus_commute_213_31770_refresh` | | 새로고침 |
 | `button.daejeon_bus_commute_213_31770_clear_cache` | | [정류장 이름 캐시 삭제](#삭제초기화) |
 
@@ -288,6 +290,33 @@ actions:
 | 노선으로 조회, 07:00~09:00, 5초 | 버스위치 1,441회 + 도착정보 1,441회 + 노선정류장 1회 (한도의 14%) |
 
 - **계산에서 빠지는 것:** 새로고침 버튼으로 직접 조회한 횟수와, 정류장 도착정보의 이름 조회(노선마다 처음 1번)는 예상치에 포함하지 않습니다(`오늘 실제 호출`에는 포함).
+
+### API 일일 호출 한도 초과
+
+공공데이터포털이 `HTTP 429` 또는 `LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR`(일일 서비스 요청제한 횟수 초과)를 돌려주면 이렇게 처리합니다.
+
+| 어디에 | 동작 |
+| --- | --- |
+| `binary_sensor.…_api_quota` (문제 유형) | **on**. 속성 `초과된 API`, `발생 시각`, `안내` |
+| 대전 버스 카드 | 머리글 아래에 빨간 **API 일일 호출 한도 초과** 안내 |
+| 센서 | 사용 불가로 바뀌지 않고 **마지막으로 받은 정보를 유지** (카드에 몇 시 기준인지 표시) |
+| 자동 조회 | 0시 초기화 전까지 **쉼** (새로고침 버튼으로는 다시 시도 가능) |
+| 로그 | 처음 한 번 경고 |
+
+- **자동으로 꺼지는 시점:** **매일 0시**(한도 초기화), 또는 그 API 조회가 다시 성공하면 off가 됩니다.
+- **정류장 이름 조회:** 노선 정류장 API가 한도에 걸려도 포기하지 않고, 한도가 풀린 뒤 다시 조회합니다.
+- **자동화 예시:** 한도 초과를 휴대폰으로 알리려면 이렇게 쓰면 됩니다.
+
+```yaml
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.daejeon_bus_31770_api_quota
+    to: "on"
+actions:
+  - action: notify.mobile_app_내폰
+    data:
+      message: "대전 버스 API 일일 한도 초과: {{ state_attr('binary_sensor.daejeon_bus_31770_api_quota', '초과된 API') | join(', ') }}"
+```
 
 ## 삭제·초기화
 

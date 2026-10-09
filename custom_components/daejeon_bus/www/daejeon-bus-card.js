@@ -63,6 +63,11 @@ const STYLE = `
   .track ha-icon { position: absolute; top: -9px; --mdc-icon-size: 22px; }
   .more { font-size: 12px; color: var(--secondary-text-color); padding: 2px 0 6px; }
   .warn { color: var(--error-color, #db4437); padding: 16px; }
+  .quota { display: flex; gap: 10px; align-items: flex-start; margin: 0 16px 8px; padding: 10px 12px; border-radius: 8px;
+           background: rgba(219, 68, 55, .12); color: var(--error-color, #db4437); font-size: 13px; line-height: 1.4;
+           --mdc-icon-size: 20px; }
+  .quota b { display: block; }
+  .quota span { color: var(--primary-text-color); opacity: .85; }
 `;
 
 class DaejeonBusCard extends HTMLElement {
@@ -119,6 +124,7 @@ class DaejeonBusCard extends HTMLElement {
     } else {
       body = this._renderStation(st);
     }
+    if (st && st.attributes["버스 목록"] !== undefined) body = this._quotaBanner(body, st);
     this.shadowRoot.innerHTML = `<style>${STYLE}</style><ha-card>${body}</ha-card>`;
     const btn = this.shadowRoot.querySelector("button.refresh");
     if (btn) btn.addEventListener("click", () => this._refresh(st));
@@ -135,6 +141,20 @@ class DaejeonBusCard extends HTMLElement {
         </div>
         ${refresh ? `<button class="refresh${this._busy ? " busy" : ""}" title="새로고침"><ha-icon icon="mdi:refresh"></ha-icon></button>` : ""}
       </div>`;
+  }
+
+  // 공공데이터포털 일일 요청 한도 초과 안내 (머리글 바로 아래)
+  _quotaBanner(body, st) {
+    const apis = st.attributes["API 한도 초과"] || [];
+    if (!apis.length) return body;
+    const t = timeText(st.attributes["마지막 조회"]);
+    const banner = `
+      <div class="quota"><ha-icon icon="mdi:api-off"></ha-icon><div>
+        <b>API 일일 호출 한도 초과</b>
+        <span>${esc(apis.join(", "))} · 매일 0시에 초기화됩니다.${t ? ` 아래는 ${esc(t)} 기준 정보입니다.` : ""}</span>
+      </div></div>`;
+    const cut = body.indexOf('<div class="list">');
+    return cut < 0 ? body + banner : body.slice(0, cut) + banner + body.slice(cut);
   }
 
   async _refresh(st) {

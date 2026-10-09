@@ -15,7 +15,7 @@ from .card import async_register_card
 from .const import CONF_ENTRY_TYPE, DOMAIN, ENTRY_TYPE_COMMUTE
 from .coordinator import CommuteCoordinator, DaejeonBusBaseCoordinator, StationCoordinator
 
-PLATFORMS = [Platform.SENSOR, Platform.BUTTON]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -84,6 +84,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coordinator = StationCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
     coordinator.async_setup_auto_refresh()
+    coordinator.async_setup_quota_reset()
 
     _remove_obsolete_entities(hass, entry)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator

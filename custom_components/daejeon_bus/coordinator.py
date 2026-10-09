@@ -16,13 +16,13 @@ from homeassistant.const import CONF_API_KEY
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_track_time_change, async_track_time_interval
 from homeassistant.util import slugify
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
 from . import commute
-from .api import DaejeonBusApi, DaejeonBusAuthError, DaejeonBusError
+from .api import DaejeonBusApi, DaejeonBusAuthError, DaejeonBusError, DaejeonBusQuotaError
 from .const import (
     CONF_AUTO_END,
     CONF_AUTO_INTERVAL,
@@ -161,6 +161,8 @@ class DaejeonBusBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         conf = {**entry.data, **entry.options}
         self.api = DaejeonBusApi(async_get_clientsession(hass), conf[CONF_API_KEY])
         self.last_success_time: datetime | None = None
+        # 일일 요청 한도를 넘은 API(서비스) -> 처음 막힌 시각. 매일 0시에 초기화된다.
+        self._quota: dict[str, datetime] = {}
         super().__init__(
             hass,
             _LOGGER,
@@ -184,6 +186,43 @@ class DaejeonBusBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             conf if conf is not None else self.conf,
             self.api_calls_per_refresh,
             self.api_calls_per_day_extra,
+        )
+
+    # ---- 공공데이터포털 일일 요청 한도 초과 ----
+
+    @property
+    def quota_exceeded(self) -> dict[str, datetime]:
+        """오늘 한도를 넘은 API -> 발생 시각 (어제 기록은 무시)."""
+        today = dt_util.now().date()
+        return {svc: at for svc, at in self._quota.items() if dt_util.as_local(at).date() == today}
+
+    def _quota_hit(self, err: DaejeonBusQuotaError, service: str | None = None) -> None:
+        service = err.service or service or "unknown"
+        if service not in self.quota_exceeded:
+            _LOGGER.warning(
+                "%s: 공공데이터포털 일일 요청 한도를 넘었습니다 (%s). 매일 0시에 초기화되며, "
+                "그때까지 마지막으로 받은 정보를 보여주고 자동 조회를 쉽니다.",
+                self.name,
+                service,
+            )
+        self._quota[service] = dt_util.now()
+
+    def _quota_ok(self, *services: str) -> None:
+        for service in services:
+            self._quota.pop(service, None)
+
+    @callback
+    def async_setup_quota_reset(self) -> None:
+        """0시가 지나면 한도 초과 표시를 끈다 (조회하지 않아도 센서가 꺼지도록)."""
+
+        @callback
+        def _reset(_now: datetime) -> None:
+            if self._quota:
+                self._quota.clear()
+                self.async_update_listeners()
+
+        self.config_entry.async_on_unload(
+            async_track_time_change(self.hass, _reset, hour=0, minute=0, second=5)
         )
 
     # ---- 자동 조회 (옵션, 기본 꺼짐) ----
@@ -214,6 +253,9 @@ class DaejeonBusBaseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         interval = max(interval, MIN_AUTO_INTERVAL)
 
         async def _tick(now: datetime) -> None:
+            # 한도를 넘었으면 0시 초기화 전까지 자동 조회는 쉰다 (버튼으로는 다시 시도 가능)
+            if self.quota_exceeded:
+                return
             if self.in_auto_window(dt_util.as_local(now)):
                 await self.async_refresh()
 
@@ -260,10 +302,15 @@ class DaejeonBusCoordinator(DaejeonBusBaseCoordinator):
         conf = self.conf
         try:
             items = await self.api.get_arrivals(conf[CONF_STATION_ID])
+        except DaejeonBusQuotaError as err:
+            # 한도 초과: 마지막 정보를 그대로 두고 표시만 한다
+            self._quota_hit(err, API_ARRIVE)
+            return self.data or {"items": [], "routes": {}, "stop_name": None}
         except DaejeonBusAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except DaejeonBusError as err:
             raise UpdateFailed(str(err)) from err
+        self._quota_ok(API_ARRIVE)
 
         targets = parse_targets(conf.get(CONF_INCLUDE_BUSES))
         if targets:
@@ -275,7 +322,7 @@ class DaejeonBusCoordinator(DaejeonBusBaseCoordinator):
             ]
 
         # 최근 통과 정류소 이름: 캐시 파일에 없는 것만 그 버스 노선의 정류장 목록으로 조회
-        await self.stop_names.async_resolve(
+        quota_err = await self.stop_names.async_resolve(
             self.api,
             {
                 str(i.get("LAST_STOP_ID") or "").strip(): str(i.get("ROUTE_CD") or "").strip()
@@ -283,6 +330,8 @@ class DaejeonBusCoordinator(DaejeonBusBaseCoordinator):
                 if i.get("LAST_STOP_ID")
             },
         )
+        if quota_err:
+            self._quota_hit(quota_err, API_ROUTE)
 
         stop_name = next(
             (str(i["STOP_NAME"]).strip() for i in items if i.get("STOP_NAME")), None
@@ -356,10 +405,15 @@ class CommuteCoordinator(DaejeonBusBaseCoordinator):
         try:
             await self._async_ensure_stops()
             positions = await self.api.get_bus_positions(self.route_cd)
+        except DaejeonBusQuotaError as err:
+            # 한도 초과: 마지막 정보를 그대로 두고 표시만 한다
+            self._quota_hit(err)
+            return self.data or {"buses": [], "my_stop": self.my_stop, "running": None}
         except DaejeonBusAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except DaejeonBusError as err:
             raise UpdateFailed(str(err)) from err
+        self._quota_ok(API_BUSPOS, API_ROUTE)
 
         my_stop = self.my_stop
         if my_stop is None:
@@ -370,6 +424,10 @@ class CommuteCoordinator(DaejeonBusBaseCoordinator):
         # 도착정보는 지금 오는 버스의 도착예정시간용. 실패해도 정류장 수는 보여준다.
         try:
             arrivals = await self.api.get_arrivals(self.station_id)
+            self._quota_ok(API_ARRIVE)
+        except DaejeonBusQuotaError as err:
+            self._quota_hit(err, API_ARRIVE)
+            arrivals = []
         except DaejeonBusError as err:
             _LOGGER.debug("도착정보 조회 실패, 도착예정시간 없이 표시: %s", err)
             arrivals = []

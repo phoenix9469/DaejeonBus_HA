@@ -7,7 +7,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, MANUFACTURER, VERSION
+from .const import API_NAMES, DOMAIN, MANUFACTURER, VERSION
 from .coordinator import DaejeonBusBaseCoordinator
 
 
@@ -48,4 +48,6 @@ class DaejeonBusEntity(CoordinatorEntity[DaejeonBusBaseCoordinator]):
         return {
             "새로고침 버튼": refresh,
             "마지막 조회": last.isoformat() if last else None,
+            # 일일 요청 한도를 넘은 API 이름 (비어 있으면 정상)
+            "API 한도 초과": [API_NAMES.get(svc, svc) for svc in self.coordinator.quota_exceeded],
         }
